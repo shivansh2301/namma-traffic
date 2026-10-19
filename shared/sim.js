@@ -99,12 +99,13 @@
       const gap = rel - (n.l + o.l) / 2;
       // Give way to a scooter nosing in, and to a vehicle signalling a merge into
       // this corridor, but only once it is clearly ahead: if it is alongside,
-      // keep moving so it gets a gap behind us (otherwise both wait forever).
+      // keep moving so it gets a gap behind us (otherwise both wait forever). 1.1 m: the
+      // merger needs 1 m behind it (backClear), so closer than that we would wait in vain.
       const extra = o.kind === K_PLAYER && dir > 0 ? 0.35 : 0;
       const dx = Math.abs(o.x - x);
-      if (dx >= hw + o.w / 2 + (gap > 0 ? extra : 0)) {
+      if (dx >= hw + o.w / 2 + (gap > 0.5 ? extra : 0)) {
         const mx = o.kind === K_VEH ? o.ref.mergeX : NO_MERGE;
-        if (!(mx !== NO_MERGE && gap > 0.5 && o.dir === dir && Math.abs(mx - x) < hw + o.w / 2 + 0.1)) continue;
+        if (!(mx !== NO_MERGE && gap > 1.1 && o.dir === dir && Math.abs(mx - x) < hw + o.w / 2 + 0.1)) continue;
       }
       if (gap < best) { best = gap; bo = o; }
     }
@@ -219,7 +220,7 @@
       hornCd: 0, hornLog: [],
       surface: 'road', pothole: 0, puddle: 0, bumpAcc: 0, scrapeT: 0,
       // fights (after a clash)
-      fight: 0, fightWith: '', fightId: 0, fightSorry: 0, fightArgued: 0,
+      fight: 0, fightWith: '', fightId: 0, fightSorry: 0, fightArgued: 0, fightDebate: 0,
       // karma economy: luck timer, calm-riding timer, timed effects, wallet, XP gifts
       luckT: T.LUCK_FIRST, calmT: 0, letInT: 0,
       steadyT: 0, sugarT: 0, punctureT: 0, fadeT: 0, haltT: 0,
@@ -318,7 +319,7 @@
         if (y < 45 || World.barricadeAt(L, x, y, 1.5)) continue;
         const cow = {
           id: st.nextId++, kind: 'cow', variant, x, y, tx: x, off: 0, vx: 0, dir: 1, ws: false,
-          w: 0, l: 0, v: 0, vDes: 0, h: heading, mode: sit ? 'sit' : 'stand', modeT: 3 + 10 * Rng.next(h),
+          w: 0, l: 0, v: 0, vDes: 0, h: heading, mode: sit ? 'sit' : 'stand', modeT: 3 + 10 * Rng.next(h), boredT: 0,
         };
         cowBox(cow);
         st.npcs.push(cow);
@@ -372,7 +373,7 @@
       mode: 'walk', t: 0, vx: 0, vy: 0, cdir: 0, cx: 0, cmedian: false,
       dodge: 0, dodgeV: 0, splash: 0,
       thanked: 0, chatted: 0, chatWith: 0,
-      honkN: 0, honkTick: 0, gaali: 0, stall: 0,
+      honkN: 0, honkTick: 0, gaali: 0, stall: 0, blockT: 0,
     };
   }
 
@@ -555,7 +556,7 @@
       if (d.mode === 'sleep') {
         d.vx = d.vy = 0;
         // A scooter stopped right next to it: it gets up and flops down a few metres on, by the wall.
-        if (p.v < 0.5 && p.crash <= 0 && Math.abs(dy) < 2 && Math.abs(d.x - p.x) < 1.6) {
+        if (p.v < 0.5 && p.crash <= 0 && Math.abs(dy) < 3.5 && Math.abs(d.x - p.x) < 1.6) {
           const s = World.segmentAt(L, d.y);
           d.mode = 'return';
           d.woke = 1;
@@ -638,7 +639,7 @@
   /** Slip and fall: hitting a puddle (or a wet manhole cover) too fast, worse when steering hard. */
   function slipChance(st, p, base) {
     if (p.steadyT > 0 || p.invuln > 0) return 0;
-    return base * (st.weather === 'rain' ? 2 : 1) * (Math.abs(p.steer) > 0.5 ? 2 : 1) * (1 - 0.05 * p.skill);
+    return base * (st.weather === 'rain' ? 1.5 : 1) * (Math.abs(p.steer) > 0.5 ? 2 : 1) * (1 - 0.05 * p.skill);
   }
 
   // ---------------------------------------------------------------------------
@@ -676,6 +677,13 @@
   }
 
   /** opts: { skill } (rider skill level 0..SKILL_MAX from the player's profile). */
+  function todFor(seed, levelId) {
+    const h = { rng: Rng.hash(seed, levelId, 'tod') | 0 };
+    Rng.next(h);
+    const r = Rng.next(h);
+    return r < T.TOD_NIGHT ? 'night' : r < T.TOD_NIGHT + T.TOD_EVENING ? 'evening' : 'day';
+  }
+
   function create(levelId, seed, opts) {
     const L = World.level(levelId);
     seed = seed >>> 0;
@@ -686,6 +694,8 @@
       tick: 0,
       rng: Rng.hash(seed, 'run') | 0,
       weather: L.weather,
+      // Time of day is only a look (and a clock shift on screen); own stream so layouts stay put.
+      tod: todFor(seed, levelId),
       time: L.startTime,
       deadline: L.deadline,
       nextId: 1,
@@ -749,9 +759,21 @@
 
   function rainMult(st) { return st.weather === 'rain' ? T.RAIN_NPC_SPEED_MULT : 1; }
 
-  /** Personalities: racing bikers, learner drivers, horn-happy drivers; every tanker leans on its air horn. */
+  /**
+   * Personalities: racing bikers, Bapido bike taxis (with a pillion), rival
+   * delivery riders (Piggy, KinkIt, Tomato), learner drivers, horn-happy drivers;
+   * every tanker leans on its air horn.
+   */
   function npcTrait(st, kind) {
-    if (kind === 'bike') return Rng.chance(st, T.RACER_CHANCE) ? 'racer' : '';
+    if (kind === 'bike') {
+      const m = World.level(st.levelId).mode === 'delivery' ? T.DELIVERY_BIKE_MULT : 1;
+      let r = Rng.next(st);
+      for (const k in T.BIKE_TRAITS) {
+        r -= T.BIKE_TRAITS[k] * (World.DELIVERY_BRANDS.indexOf(k) >= 0 ? m : 1);
+        if (r < 0) return k;
+      }
+      return '';
+    }
     if (kind === 'car') return Rng.chance(st, T.SLOW_CAR_CHANCE) ? 'slow' : Rng.chance(st, T.HONKER_CHANCE) ? 'honker' : '';
     if (kind === 'auto') return Rng.chance(st, T.HONKER_CHANCE) ? 'honker' : '';
     if (kind === 'tanker') return 'honker';
@@ -760,6 +782,7 @@
 
   function traitSpeed(st, trait, vDes) {
     if (trait === 'racer') return Rng.range(st, T.RACER_V_MIN, T.RACER_V_MAX) * rainMult(st);
+    if (World.DELIVERY_BRANDS.indexOf(trait) >= 0) return Rng.range(st, T.RIDER_V_MIN, T.RIDER_V_MAX) * rainMult(st);
     if (trait === 'slow') return Rng.range(st, T.SLOW_CAR_V_MIN, T.SLOW_CAR_V_MAX);
     return vDes;
   }
@@ -1071,7 +1094,7 @@
       else if (visiblePotholeAhead(st, n.x, n.y, 12, 0.4)) replan = true;
     }
     if (replan) {
-      n.plan = n.trait === 'racer' ? 0.2 + Rng.next(st) * 0.2 : 0.4 + Rng.next(st) * 0.4;
+      n.plan = n.trait && n.trait !== 'bapido' ? 0.2 + Rng.next(st) * 0.2 : 0.4 + Rng.next(st) * 0.4;
       // 1. Pick the line with the most room ahead: current x, +/- 0.35, every
       //    lane centre and lane line, and hugging the kerb.
       let goal = n.x;
@@ -1190,9 +1213,12 @@
       n.blocked = 0;
       n.byPlayer = 0;
     }
-    // Gridlock valve: nose to nose with opposite traffic for too long, one of them
-    // ducks into a side gate or driveway (in real gullies someone reverses).
-    if (n.blocked > T.GRIDLOCK_TIME && lead && lead.kind === K_VEH && lead.ref.dir !== n.dir && !n.ws) {
+    // Gridlock valve: nose to nose with opposite traffic (or a stopped scooter coming
+    // the other way: there is no reverse gear) for too long, or stuck behind anything
+    // but the player for much longer, and it ducks into a side gate or driveway.
+    // In real gullies someone reverses.
+    const faceOff = lead && ((lead.kind === K_VEH && lead.ref.dir !== n.dir) || (lead.kind === K_PLAYER && n.dir < 0));
+    if (!n.ws && ((faceOff && n.blocked > T.GRIDLOCK_TIME) || (n.blocked > T.GRIDLOCK_TIME * 2.5 && !(lead && lead.kind === K_PLAYER)))) {
       n.gone = 1;
       ev.push({ type: 'npcTurnOff', id: n.id, x: n.x, y: n.y, kind: n.kind });
     }
@@ -1222,9 +1248,19 @@
     const prevY = n.y;
     n.y += n.dir * move;
     if (L.junctions.length) junctionTurnOff(L, n, prevY);
-    if (n.trait === 'racer' && !n.passed && (prevY - p.y) * (n.y - p.y) <= 0 && Math.abs(n.x - p.x) < 2.5) {
+    if (n.kind === 'bike' && n.trait && n.trait !== 'bapido' && !n.passed && (prevY - p.y) * (n.y - p.y) <= 0 && Math.abs(n.x - p.x) < 2.5) {
       n.passed = 1;
-      ev.push({ type: 'racerPass', id: n.id, x: n.x, y: n.y, dir: n.dir });
+      ev.push({ type: 'bikePass', id: n.id, trait: n.trait, x: n.x, y: n.y, dir: n.dir });
+    }
+    // Auto drivers and Bapido bike taxis: not friends.
+    if (n.kind === 'auto' && near && n.argueT <= 0) {
+      for (let i = 0; i < obN; i++) {
+        const o = OB[i];
+        if (o.kind !== K_VEH || o.ref.trait !== 'bapido' || Math.abs(o.y - n.y) > T.RANT_RANGE || Math.abs(o.x - n.x) > 3) continue;
+        n.argueT = T.RANT_COOLDOWN;
+        ev.push({ type: 'autoRant', id: n.id, at: o.ref.id, x: n.x, y: n.y });
+        break;
+      }
     }
 
     const dx = n.tx - n.x;
@@ -1343,6 +1379,19 @@
 
   function updateCow(st, L, n) {
     n.modeT -= DT;
+    // Cows never yield, but a scooter waiting right next to one for a while bores it into wandering off.
+    const p = st.players[0];
+    if (n.mode !== 'amble' && p.v < 0.5 && Math.hypot(n.x - p.x, n.y - p.y) < 3.2) {
+      n.boredT += DT;
+      if (n.boredT > 2.5) {
+        n.boredT = 0;
+        n.mode = 'amble';
+        n.modeT = 6;
+        n.h = Math.atan2(n.x - p.x, Math.max(0.5, n.y - p.y)); // away from us, onwards
+        n.v = 0.45;
+        cowBox(n);
+      }
+    } else n.boredT = 0;
     if (n.modeT <= 0) {
       const r = Rng.next(st);
       n.mode = r < 0.4 ? 'amble' : r < 0.7 ? 'stand' : 'sit';
@@ -1428,8 +1477,10 @@
     if ((pd.mode === 'wait' || pd.mode === 'chat' || pd.mode === 'hail') && p.v < 0.5 && p.crash <= 0) {
       const ahead = pd.y - p.y;
       if (ahead > -0.2 && ahead < T.PLAYER_L / 2 + 2.5 && Math.abs(pd.x - p.x) < T.PLAYER_W / 2 + PED.w / 2 + 0.45) {
+        const sA = World.segmentAt(L, pd.y);
         let dir = pd.side === 0 ? -1 : 1; // towards their own edge...
         if ((p.x - pd.x) * dir > 0) dir = -dir; // ...unless the scooter is on that side
+        if (pd.x + dir * 0.6 < sA.xs.wallL + 0.3 || pd.x + dir * 0.6 > sA.xs.wallR - 0.3) dir = -dir; // or the wall is
         pd.dodge = 0.6;
         pd.dodgeV = dir * 1.2;
         return;
@@ -1470,13 +1521,18 @@
       }
       return;
     }
-    // walking along the edge
-    const ahead0 = pd.y + pd.dir * 0.9;
-    const meBlocks = p.v < T.PED_SAFE_SPEED && Math.abs(p.y - ahead0) < T.PLAYER_L / 2 + 0.5 && Math.abs(p.x - pd.x) < T.PLAYER_W / 2 + 0.45;
-    if (!meBlocks) pd.y += pd.dir * pd.v * DT; // pause while stepping round a stopped scooter
+    // walking along the edge; a stopped scooter in the way: step round it (pause until clear of it)
+    const CLEAR = (T.PLAYER_W + PED.w) / 2 + 0.15;
+    const meAhead = p.v < T.PED_SAFE_SPEED && Math.abs(p.y - (pd.y + pd.dir * 0.9)) < T.PLAYER_L / 2 + 0.5 && Math.abs(p.x - pd.x) < CLEAR + 0.3;
+    if (!meAhead || Math.abs(p.x - pd.x) >= CLEAR) { pd.y += pd.dir * pd.v * DT; pd.blockT = 0; }
+    else if ((pd.blockT += DT) > 1.5) { pd.dir = -pd.dir; pd.blockT = 0; } // cannot get round: turn back
     const b = World.pedBand(s, pd.side);
     let tx = b[0] + pd.u * (b[1] - b[0]);
-    if (meBlocks) tx = pd.x <= p.x ? p.x - T.PLAYER_W / 2 - 0.45 : p.x + T.PLAYER_W / 2 + 0.45;
+    if (meAhead) {
+      let side = pd.x <= p.x ? -1 : 1;
+      if (p.x + side * (CLEAR + 0.25) < s.xs.wallL + 0.3 || p.x + side * (CLEAR + 0.25) > s.xs.wallR - 0.3) side = -side;
+      tx = p.x + side * (CLEAR + 0.25);
+    }
     for (const k of st.stalls) { // round the chai stall, on the road side
       if (k.side !== pd.side || Math.abs(k.y - (pd.y + pd.dir * 0.8)) > k.l / 2 + 0.6) continue;
       if (k.side === 0) tx = Math.max(tx, k.x + k.w / 2 + 0.3);
@@ -1569,6 +1625,7 @@
       const isPed = angry.kind == null;
       gaali(st, p, isPed ? 'ped' : angry.kind, angry.id, angry.x, angry.y, ev);
       if (!isPed && angry.honk <= 0) { angry.honk = 2; ev.push({ type: 'honkNpc', id: angry.id, x: angry.x, y: angry.y, kind: angry.kind, atPlayer: true, angry: true }); }
+      startDebate(st, p, isPed ? 'ped' : angry.kind, angry, ev);
     }
     for (const pd of st.peds) {
       const dy = pd.y - p.y;
@@ -1636,10 +1693,25 @@
       p.fightId = other.id;
       p.fightSorry = 0;
       p.fightArgued = 0;
+      p.fightDebate = 0;
       p.fights++;
       if (party !== 'ped' && party !== 'vendor') other.stop = Math.max(other.stop, T.FIGHT_TIME);
       ev.push({ type: 'fight', phase: 'start', with: party, id: other.id, pid: p.id });
     }
+  }
+
+  /** A gaali turns into a heated debate: HORN argues back, BRAKE is the responsible way out (no karma lost). */
+  function startDebate(st, p, party, other, ev) {
+    if (T.FIGHT_KARMA[party] == null || p.fight > 0 || p.crash > 0 || p.handT > 0) return;
+    p.fight = T.DEBATE_TIME;
+    p.fightWith = party;
+    p.fightId = other.id;
+    p.fightSorry = 0;
+    p.fightArgued = 0;
+    p.fightDebate = 1;
+    p.fights++;
+    if (party !== 'ped') other.stop = Math.max(other.stop || 0, T.DEBATE_TIME);
+    ev.push({ type: 'fight', phase: 'start', with: party, id: other.id, pid: p.id, debate: true });
   }
 
   /** During an argument: hold BRAKE to apologise, HORN to argue back. Returns true if the horn was used. */
@@ -1650,8 +1722,9 @@
     if (inp.brake && !p.fightArgued) {
       p.fightSorry += DT;
       if (p.fightSorry >= T.APOLOGY_HOLD) {
-        loseKarma(p, T.APOLOGY_KARMA);
-        ev.push({ type: 'fight', phase: 'sorry', with: party, id: p.fightId, karma: T.APOLOGY_KARMA, pid: p.id });
+        const cost = p.fightDebate ? 0 : T.APOLOGY_KARMA;
+        loseKarma(p, cost);
+        ev.push({ type: 'fight', phase: p.fightDebate ? 'moveOn' : 'sorry', with: party, id: p.fightId, karma: cost, pid: p.id });
         p.fight = 0;
         p.fightWith = '';
         return false;
@@ -1670,7 +1743,7 @@
     }
     if (p.fight <= 0) {
       p.fight = 0;
-      if (!p.fightArgued) {
+      if (!p.fightArgued && !p.fightDebate) {
         const cost = T.FIGHT_KARMA[party] / 2;
         loseKarma(p, cost);
         ev.push({ type: 'fight', phase: 'shouted', with: party, id: p.fightId, karma: cost, pid: p.id });
@@ -2060,7 +2133,7 @@
     for (const d of st.dogs) {
       if (d.mode !== 'sleep' || d.y > p.y + 3 || d.y < p.y - 3) continue;
       if (Math.abs(d.x - p.x) < hw + (T.DOG_W / 2) * f && Math.abs(d.y - p.y) < hl + (T.DOG_L / 2) * f) {
-        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x + (p.x >= d.x ? 1 : -1) * T.EDGE_ROUND_SPEED * DT; p.y = prev.y; p.v = 0; continue; } // walk it round
         crash(st, p, 'dog', d, ev);
         return;
       }
@@ -2068,7 +2141,7 @@
     for (const k of st.stalls) {
       if (k.y > p.y + 4 || k.y < p.y - 4) continue;
       if (Math.abs(k.x - p.x) < hw + k.w / 2 && Math.abs(k.y - p.y) < hl + k.l / 2) {
-        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x + (k.x < 1 ? 1 : -1) * T.EDGE_ROUND_SPEED * DT; p.y = prev.y; p.v = 0; continue; } // walk it round, road side
         crash(st, p, 'stall', k, ev);
         return;
       }

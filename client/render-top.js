@@ -521,7 +521,33 @@
         if (h.hidden) continue;
         sprites.draw(ctx, 'ph.' + h.shape, sx(h.x), sy(h.y), h.rot, ppm * h.r);
       }
+      // street life: missing drain slabs, sunken manholes, stalls, dogs
+      for (const d of st.drains || []) {
+        if (d.y < yb || d.y > yt) continue;
+        ctx.fillStyle = '#14110e';
+        ctx.fillRect(sx(d.x - T.DRAIN_W / 2), sy(d.y + T.DRAIN_L / 2), T.DRAIN_W * ppm, T.DRAIN_L * ppm);
+      }
+      for (const m of st.manholes || []) {
+        if (m.y < yb || m.y > yt) continue;
+        ctx.fillStyle = '#4a4d52'; ctx.strokeStyle = '#2a2c30'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(sx(m.x), sy(m.y), T.MANHOLE_R * ppm, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      for (const k of st.stalls || []) {
+        if (k.y < yb - 2 || k.y > yt + 2) continue;
+        ctx.fillStyle = STALL_TARP[k.kind] || '#b71c1c';
+        ctx.fillRect(sx(k.x - k.w / 2), sy(k.y + k.l / 2), k.w * ppm, k.l * ppm);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(sx(k.x - k.w / 2), sy(k.y + 0.1), k.w * ppm, 0.2 * ppm);
+      }
+      for (const d of st.dogs || []) {
+        if (d.y < yb || d.y > yt) continue;
+        ctx.fillStyle = DOG_COL[d.variant % DOG_COL.length];
+        const run = d.mode !== 'sleep';
+        ctx.beginPath(); ctx.ellipse(sx(d.x), sy(d.y), (run ? 0.18 : 0.3) * ppm, (run ? 0.45 : 0.3) * ppm, 0, 0, Math.PI * 2); ctx.fill();
+      }
     }
+    const STALL_TARP = { chai: '#1565c0', momo: '#2e7d32', biryani: '#b71c1c' };
+    const DOG_COL = ['#c8a165', '#3b2f2a', '#e8dcc6', '#8b5a2b'];
 
     // --- entities -------------------------------------------------------------
     function addEnt(ref, kind, x, y) {
@@ -567,7 +593,12 @@
       let rot = Math.atan2(n.vx || 0, n.dir * Math.max(n.v, 2));
       if (n.dir > 0) rot = Math.max(-0.35, Math.min(0.35, rot));
       sprites.draw(ctx, key, X, Y, rot, ppm);
+      if (n.trait && TRAIT_COL[n.trait]) { // delivery riders' boxes, Bapido helmets, racers
+        ctx.fillStyle = TRAIT_COL[n.trait];
+        ctx.fillRect(X - 0.22 * ppm, Y - 0.2 * ppm * n.dir, 0.44 * ppm, 0.4 * ppm);
+      }
     }
+    const TRAIT_COL = { piggy: '#f57c00', kinkit: '#fbc02d', tomato: '#d32f2f', bapido: '#ffd600', racer: '#00e5ff', slow: '#ffffff' };
 
     function drawPedestrian(pd, X, Y) {
       let rot;
@@ -744,7 +775,7 @@
       ctx.textAlign = 'left';
       const late = st.time > st.deadline;
       ctx.fillStyle = late ? PAL.late : PAL.hudText;
-      ctx.fillText(World.fmtClock(st.time) + ' / ' + World.fmtClock(st.deadline), 12, 17);
+      ctx.fillText(World.fmtClock(st.time + (World.T.TOD_SHIFT[st.tod] || 0)) + ' / ' + World.fmtClock(st.deadline + (World.T.TOD_SHIFT[st.tod] || 0)), 12, 17);
       ctx.fillStyle = PAL.hudText;
       ctx.textAlign = 'right';
       ctx.fillText(Math.round(p.v * 3.6) + ' km/h', W - 60, 17);
@@ -786,6 +817,7 @@
       drawTelegraphs(st, opts && opts.hud);
       drawSplat(dt);
       if (opts && opts.hud) GameHud.draw(ctx, st, W, { speed: true });
+      if (opts && opts.hud) GameHud.drawHandover(ctx, st, W, H);
       if (opts && opts.hud && opts.touch) GameHud.drawHandle(ctx, W, H, opts.touch, opts.touchHint, time);
     }
 

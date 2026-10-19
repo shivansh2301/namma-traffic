@@ -6,9 +6,8 @@
  * Space / H horn, P / Esc pause.
  * Touch: hold the LEFT HANDLE (bottom-left of the screen, drawn by the
  * renderer as a handlebar grip on a slide track) and slide it left/right.
- * 'drag' mode is relative to where the touch started (HANDLE_TRAVEL px =
- * full lock, less on narrow screens; the drawn grip follows the thumb); 'follow' mode steers
- * toward the finger's x (switch in settings). BRAKE and HORN are DOM
+ * Steering is relative to where the touch started (HANDLE_TRAVEL px =
+ * full lock, less on narrow screens; the drawn grip follows the thumb). BRAKE and HORN are DOM
  * buttons on the right.
  */
 (function (root) {
@@ -23,7 +22,7 @@
   // Narrow phones get a shorter track so it clears the BRAKE button (96 px + 16 px margin on the right).
   function handleTravel(w) { return Math.max(44, Math.min(HANDLE_TRAVEL, Math.floor((w - 216) / 2))); }
 
-  function create(canvas, btns, steerToward) {
+  function create(canvas, btns) {
     const keys = Kit.Input.keys(window, ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space']);
     const brakeBtn = Kit.Input.button(btns.brake);
     const hornBtn = Kit.Input.button(btns.horn);
@@ -31,7 +30,6 @@
     const drag = Kit.Input.drag(canvas, {
       pxPerUnit: (r) => handleTravel(r.width),
       zone: (x, y, r) => y > r.top + r.height * 0.55 && x < r.left + r.width * 0.62,
-      absolute: (clientX, r) => steerToward(clientX - r.left),
     });
     let kSteer = 0;
     const out = { steer: 0, brake: 0, horn: 0 };
@@ -46,11 +44,9 @@
         handle.travel = handleTravel(canvas.getBoundingClientRect().width);
         return handle;
       },
-      setTouchMode(m) { drag.mode = m === 'follow' ? 'absolute' : 'relative'; },
       sample(dt) {
         const dir = (keys.any(RIGHT) ? 1 : 0) - (keys.any(LEFT) ? 1 : 0);
         kSteer = Kit.Input.ramp(kSteer, dir, 10, dt);
-        if (drag.active && drag.mode === 'absolute') drag.refresh();
         out.steer = drag.active ? drag.value : kSteer;
         out.brake = keys.any(BRAKE) || brakeBtn.down ? 1 : 0;
         out.horn = keys.any(HORN) || hornBtn.down ? 1 : 0;

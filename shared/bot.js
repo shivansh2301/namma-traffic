@@ -52,7 +52,7 @@
     }
     for (const k of st.stalls) {
       if (k.y < p.y - 3 || k.y > p.y + 55) continue;
-      obs.push({ x: k.x, y: k.y, w: k.w, l: k.l, vx: 0, vy: 0, kind: 'stall' });
+      obs.push({ x: k.x, y: k.y, w: k.w + 0.3, l: k.l + 4, vx: 0, vy: 0, kind: 'stall' }); // padded: leave the edge early
     }
     for (const d of st.dogs) {
       if (d.mode !== 'sleep' || d.y < p.y - 3 || d.y > p.y + 45) continue;
@@ -74,7 +74,7 @@
     if (st.weather === 'rain') {
       for (const q of st.puddles) {
         if (q.y < p.y - 1 || q.y > p.y + 26) continue;
-        soft.push({ x: q.x, y: q.y, r: q.rx, k: q.leak ? 0.5 : 2.2 });
+        soft.push({ x: q.x, y: q.y, r: q.rx, k: q.leak ? 0.5 : 3.5 }); // puddles hide potholes, and you can slip
       }
     }
     return { obs, soft };
@@ -205,9 +205,11 @@
     const dropD = o ? o.y - p.y : 1e9;
     const dropping = dropD < 60 && dropD > -T.DROP_ZONE / 2;
     const kerbBonus = dropping ? 10 * (1 - Math.max(0, dropD - 15) / 45) : 0;
+    // Patience runs out: after a few seconds stuck, the footpath (or the far side) starts to look fine.
+    const surfW = Math.max(0.15, 1 - Math.max(0, mem.stuck - 3) * 0.15);
     for (let i = 0; i < n; i++) {
       const x = cx[i];
-      val[i] = Math.min(ttc[i], 4) * 2.5 + 0.5 * corridorFlow(x, p, obs) - softCost(x, p, soft) - surfaceCost(sA, x, p.surface) - 0.35 * Math.abs(x - p.x);
+      val[i] = Math.min(ttc[i], 4) * 2.5 + 0.5 * corridorFlow(x, p, obs) - softCost(x, p, soft) - surfaceCost(sA, x, p.surface) * surfW - 0.35 * Math.abs(x - p.x);
       if (kerbBonus && x >= 0.35 && x <= T.DROP_MAX_X - 0.35) val[i] += kerbBonus;
       if (val[i] > val[gBest]) gBest = i;
     }
@@ -223,10 +225,14 @@
       }
     }
     if ((gBest < left || gBest > right) && val[gBest] > val[best] + 2) best = gBest < left ? left : right;
+    // Stopped inside the drop zone but not at the kerb: edge across to it if we can reach it.
+    if (dropping && Math.abs(dropD) < T.DROP_ZONE / 2 - 1.2 && p.x > T.DROP_MAX_X - 0.15 && p.v < 0.5) {
+      for (let i = left; i <= right; i++) if (cx[i] >= 0.35 && cx[i] <= T.DROP_MAX_X - 0.35) { best = i; break; }
+    }
     if (mem.trace) mem.last = { cx, ttc, now, val, left, right, cur, best, gBest };
     let target = cx[best];
     const prev = mem.target != null ? Math.round((mem.target - lo) / STEP) : -1;
-    if (prev >= left && prev <= right && val[prev] > val[best] - 0.6) target = mem.target; // hysteresis
+    if (mem.stuck < 1.5 && prev >= left && prev <= right && val[prev] > val[best] - 0.6) target = mem.target; // hysteresis (not when stuck)
     mem.target = target;
 
     const dx = target - p.x;

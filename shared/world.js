@@ -87,7 +87,8 @@
     INVULN_TIME: 2.0,
     CRASH_COST: { vehicle: 20, headOn: 30, cow: 20, barricade: 15, ped: 10, slip: 8, drain: 15, dog: 8, stall: 10 },
     CRASH_KARMA: { vehicle: 0, headOn: 0, cow: 15, barricade: 0, ped: 20, slip: 0, drain: 0, dog: 10, stall: 5 },
-    PED_SAFE_SPEED: 1.5, // m/s: (nearly) stopped, a pedestrian walking into you is a nudge, not a crash
+    PED_SAFE_SPEED: 1.5,
+    EDGE_ROUND_SPEED: 1.2, // m/s sideways when nosing slowly into a stall or a sleeping dog // m/s: (nearly) stopped, a pedestrian walking into you is a nudge, not a crash
     HITBOX_FORGIVE: 0.9, // collision boxes are scaled by this; feels fairer
     SCRAPE_SPEED: 1.5, // m/s relative; slower contact with a vehicle stops you instead of crashing (docs/DECISIONS.md)
 
@@ -98,6 +99,10 @@
     // to apologise (cheap), HORN to argue (expensive), or get shouted at (half).
     FIGHT_TIME: 3.0,
     APOLOGY_HOLD: 0.4,
+    DEBATE_TIME: 3.0, // a gaali turns into a heated debate: HORN argues, BRAKE moves on
+    TOD_EVENING: 0.2, // chance a run is in the evening (look only)
+    TOD_NIGHT: 0.2, // chance a run is at night (look only)
+    TOD_SHIFT: { day: 0, evening: 9 * 3600, night: 12 * 3600 }, // clock shown on screen
     APOLOGY_KARMA: 2,
     ARGUE_MORE_KARMA: 4,
     FIGHT_KARMA: { auto: 15, car: 10, bike: 10, bus: 8, tanker: 8, ped: 15, vendor: 10 },
@@ -229,11 +234,16 @@
     MANHOLE_R: 0.4,
     FOOTPATH_PUDDLES_PER_100M: 1.2,
     SLIP_MIN_SPEED: 4.5, // hitting a puddle faster than this may make you slip and fall
-    SLIP_CHANCE: 0.05, // per puddle; x2 in the rain, x2 when steering hard; skill and water help
+    SLIP_CHANCE: 0.04, // per puddle; x1.5 in the rain, x2 when steering hard; skill and water help
     MANHOLE_SLIP_CHANCE: 0.12, // wet manhole cover while steering hard
 
-    // NPC personalities
-    RACER_CHANCE: 0.14, // of bikes: 50-60 km/h, weaving, tailgating
+    // NPC personalities (docs/concepts/traffic-and-npc-life.md)
+    BIKE_TRAITS: { racer: 0.1, bapido: 0.12, piggy: 0.06, kinkit: 0.06, tomato: 0.06 }, // share of bikes; the rest are plain
+    DELIVERY_BIKE_MULT: 2, // delivery shifts: rival delivery riders twice as common
+    RIDER_V_MIN: 11, // rival delivery riders: in a hurry too
+    RIDER_V_MAX: 14,
+    RANT_RANGE: 6, // an auto this close to a Bapido bike taxi has words to say
+    RANT_COOLDOWN: 12,
     RACER_V_MIN: 14,
     RACER_V_MAX: 17,
     SLOW_CAR_CHANCE: 0.12, // of cars: a learner (L board) at walking pace
@@ -320,6 +330,8 @@
     ],
   };
   const STALL_KINDS = ['chai', 'momo', 'biryani'];
+  /** Rival quick-commerce riders (parody names); the player rides for Zebto (purple). */
+  const DELIVERY_BRANDS = ['piggy', 'kinkit', 'tomato'];
 
   /** What makes a gully busy (flavour: toast text, banner and bunting colours live in the client). */
   const BUSY_KINDS = ['school', 'market', 'temple', 'wedding', 'cricket'];
@@ -367,7 +379,7 @@
   };
 
   // Gully mix: lots of bikes and autos, carts, fewer cars (but they are parked everywhere).
-  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0.3 };
+  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0.4 };
 
   const LEVELS = [
     // ---- Office commute: be at the tech park by 10:00 -------------------------
@@ -378,7 +390,7 @@
       weather: 'clear',
       start: '09:36',
       blurb: 'Narrow 1+1 lanes, cows, potholes and footpaths that come and go, then the tech park gate. Wrong-side riders near the end.',
-      mix: { bike: 4, auto: 3, car: 4, bus: 0, tanker: 0 },
+      mix: { bike: 4, auto: 3, car: 4, bus: 0, tanker: 0.5 },
       destination: { kind: 'techpark', name: 'Koramangala Tech Hub' },
       landmarks: [
         { at: 0, name: 'Home, 6th Block' },
@@ -501,7 +513,7 @@
       weather: 'clear',
       start: '18:30',
       blurb: 'Three orders. Two houses deep in the gullies, then an apartment tower. Parked cars, cows, carts and two-way traffic in lanes barely wide enough.',
-      mix: { bike: 4, auto: 3, car: 4, cart: 0.6, bus: 0, tanker: 0 },
+      mix: { bike: 4, auto: 3, car: 4, cart: 0.6, bus: 0, tanker: 0.4 },
       drops: [
         { at: 198, kind: 'house', name: 'No. 42, 3rd Cross', due: '18:34' },
         { at: 422, kind: 'house', name: 'Sri Lakshmi Nilaya, 5th Main', due: '18:36' },
@@ -842,7 +854,7 @@
   }
 
   return {
-    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, BUSY_KINDS, HANDOVER_SCENES, STALL_KINDS, Rng,
+    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, BUSY_KINDS, HANDOVER_SCENES, STALL_KINDS, DELIVERY_BRANDS, Rng,
     level, segmentAt, surfaceAt, curveAt, levelsOf, prevInMode, pedBand, crossSection, laneCenter, oncCenter,
     jamCap, barricadeAt, laneBlocked, parseClock, fmtClock, xpForLevel, skillLevel,
     levelIds: LEVELS.map((l) => l.id),

@@ -3,7 +3,7 @@
  * Bump VERSION when shipping. ASSETS must list every file index.html loads
  * (tests/purity.test.js checks this).
  */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = 'namma-commute-' + VERSION;
 const ASSETS = [
   './',
@@ -22,6 +22,7 @@ const ASSETS = [
   '../shared/world.js',
   '../shared/sim.js',
   '../shared/bot.js',
+  './lines.js',
   './input.js',
   './hud.js',
   './render.js',

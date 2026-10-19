@@ -4,8 +4,8 @@
 
 ## Cameras
 Two camera modes share one projection (`R.setCamMode('chase' | 'cockpit')`;
-Settings → View cycles *behind the scooter* → *from the seat* → *top-down map*):
-- **Chase (default):** the camera sits `CHASE_BACK` 4.6 m behind the scooter
+Settings → View cycles *from the seat* (default) → *behind the scooter* → *top-down map*):
+- **Chase:** the camera sits `CHASE_BACK` 4.6 m behind the scooter
   and `CHASE_H` 2.6 m up, with the horizon at `CHASE_HORIZON` 0.30 H. The
   rider is drawn as a depth-sorted item (`me.c` / `me.d` rear sprites: orange
   commute jacket, purple + delivery box), leaning with steering. You see what

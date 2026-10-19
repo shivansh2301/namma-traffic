@@ -1,12 +1,12 @@
 /*
  * client/main.js: game loop, screens, toasts, persistence, PWA registration.
  *
- * Screens: title -> mode (commute | delivery) -> levels -> briefing -> play <-> pause -> result.
- * The title, level and briefing screens show the bot riding level 1 behind them.
+ * Screens: title -> mode (commute | delivery) -> levels -> play <-> pause -> result.
+ * The title and level screens show the bot riding level 1 behind them.
  * Views: road view (render.js) behind the scooter (default) or from the seat, or top-down map (render-top.js).
  *
  * Persistence (kit/storage, keys under nc.):
- *   nc.settings  { muted, reduceShake, touchHintSeen, touchSteer, view, viewV }
+ *   nc.settings  { muted, reduceShake, touchHintSeen, view, viewV }
  *   nc.progress  { levelId: { stars, bestScore, bestTime } }
  *   nc.rider     { xp, money, runs }  -> rider skill = World.skillLevel(xp)
  *
@@ -21,8 +21,9 @@
 
   // --- persistence ---------------------------------------------------------------
   const store = Kit.Storage.create('nc.');
-  const settings = store.get('settings', { muted: false, reduceShake: false, touchHintSeen: false, touchSteer: 'drag', view: 'chase', viewV: 2 });
-  if (settings.viewV !== 2) { settings.view = 'chase'; settings.viewV = 2; settings.touchHintSeen = false; } // chase camera is the new default; show the left-handle tutorial once
+  const settings = store.get('settings', { muted: false, reduceShake: false, touchHintSeen: false, view: 'first', viewV: 3 });
+  if (settings.viewV !== 3) { settings.view = 'first'; settings.viewV = 3; settings.touchHintSeen = false; } // from the seat is the default again; show the left-handle tutorial once
+  delete settings.touchSteer; // "follow finger" steering was removed
   if (['chase', 'first', 'top'].includes(params.get('view'))) settings.view = params.get('view');
   const progress = store.get('progress', {});
   const rider = store.get('rider', { xp: 0, money: 0, runs: 0 });
@@ -56,11 +57,7 @@
   let resultTimer = 0;
   let lastInput = { steer: 0, brake: 0, horn: 0 };
 
-  const input = GameInput.create(canvas, { brake: $('btn-brake'), horn: $('btn-horn') }, (cssX) => {
-    if (!state) return 0;
-    return (R.worldX(cssX) - state.players[0].x) / 0.8;
-  });
-  input.setTouchMode(settings.touchSteer);
+  const input = GameInput.create(canvas, { brake: $('btn-brake'), horn: $('btn-horn') });
 
   let isTouch = matchMedia('(pointer: coarse)').matches;
   window.addEventListener('pointerdown', (e) => {
@@ -70,7 +67,7 @@
   const skill = () => World.skillLevel(rider.xp);
 
   // --- screens -----------------------------------------------------------------------
-  const screens = ['title', 'mode', 'levels', 'brief', 'pause', 'result'];
+  const screens = ['title', 'mode', 'levels', 'pause', 'result'];
   function setMode(m) {
     mode = m;
     for (const s of screens) $('scr-' + s).hidden = s !== m;
@@ -120,39 +117,17 @@
         '<span class="lv-body"><span class="lv-name">' + def.name + '</span>' +
         '<span class="lv-meta">' + (L.length / 1000).toFixed(1) + ' km · ' + (def.weather === 'rain' ? 'Rain' : 'Clear') + ' · ' + (L.mode === 'delivery' ? L.drops.length + ' orders from ' + def.start : 'leave ' + def.start) + '</span></span>' +
         '<span class="lv-stars" aria-label="' + (pr ? pr.stars : 0) + ' stars">' + (open ? stars(pr ? pr.stars : 0) : 'Locked') + '</span>';
-      b.addEventListener('click', () => { click(); levelId = def.id; openBrief(); });
+      b.addEventListener('click', () => { click(); startRun(def.id); });
       list.appendChild(b);
     }
   }
 
-  function openBrief() {
-    const L = World.level(levelId);
-    const def = World.LEVELS.find((d) => d.id === levelId);
-    $('brief-name').textContent = L.name;
-    $('brief-blurb').textContent = L.blurb;
-    const ol = $('brief-orders');
-    if (L.mode === 'delivery') {
-      $('brief-meta').textContent = (L.weather === 'rain' ? 'Rain' : 'Clear') + ' · ' + (L.length / 1000).toFixed(1) + ' km · shift starts ' + def.start;
-      ol.innerHTML = L.drops.map((d) => '<li>' + (d.kind === 'apartment' ? 'Apartment: ' : 'House: ') + d.name + ' · <span class="due">by ' + World.fmtClock(d.due) + '</span></li>').join('');
-      ol.hidden = false;
-    } else {
-      $('brief-meta').textContent = (L.weather === 'rain' ? 'Rain' : 'Clear') + ' · ' + (L.length / 1000).toFixed(1) + ' km · leave ' + def.start + ' · in by ' + World.fmtClock(L.deadline);
-      ol.hidden = true;
-    }
-    const pr = progress[levelId];
-    $('brief-best').textContent = (pr ? 'Best: ' + stars(pr.stars) + ' · ' + pr.bestScore + ' pts · ' : '') + 'Your skill: ' + skill();
-    const howDrop = L.mode === 'delivery' ? ' To deliver: pull over to the left kerb inside the purple zone and stop.' : '';
-    $('brief-controls').textContent = (isTouch
-      ? 'Hold the LEFT HANDLE (bottom left) with your thumb and slide it to steer. BRAKE and HORN are bottom right.'
-      : 'Steer ← → · Brake ↓ · Horn Space · Pause P.') + howDrop + ' Stop for people crossing: good karma.';
-    setMode('brief');
-  }
 
   function renderSettings(el) {
     el.innerHTML = '';
     const items = [
-      ['View: ' + ({ chase: 'behind the scooter', first: 'from the seat', top: 'top-down map' }[settings.view] || 'behind the scooter'), () => settings.view !== 'top', () => {
-        settings.view = { chase: 'first', first: 'top', top: 'chase' }[settings.view] || 'chase';
+      ['View: ' + ({ chase: 'behind the scooter', first: 'from the seat', top: 'top-down map' }[settings.view] || 'from the seat'), () => settings.view !== 'top', () => {
+        settings.view = { first: 'chase', chase: 'top', top: 'first' }[settings.view] || 'first';
         applyView();
       }],
       ['Sound: ' + (settings.muted ? 'off' : 'on'), () => !settings.muted, () => { settings.muted = !settings.muted; synth.setMuted(settings.muted); }],
@@ -161,7 +136,6 @@
         for (const v of Object.values(views)) v.setReduceShake(settings.reduceShake);
       }],
     ];
-    if (isTouch) items.push(['Touch steering: ' + (settings.touchSteer === 'follow' ? 'follow finger' : 'left handle'), () => settings.touchSteer === 'follow', () => { settings.touchSteer = settings.touchSteer === 'follow' ? 'drag' : 'follow'; input.setTouchMode(settings.touchSteer); }]);
     for (const [label, get, toggle] of items) {
       const b = document.createElement('button');
       b.className = 'toggle';
@@ -183,52 +157,55 @@
     toastTimer = kind === 'bad' || kind === 'good' ? 3.2 : 2.2;
   }
 
-  const LUCK_TEXT = {
-    tip: (e) => 'A customer tips you ₹' + e.amount + '. Shabash!',
-    water: () => 'A shopkeeper hands you water. Steady hands for ' + T.STEADY_TIME + ' s!',
-    sweets: () => 'Someone shares Mysore pak. Sugar rush: faster for ' + T.SUGAR_TIME + ' s!',
-    skill: (e) => 'A senior rider shares a trick. +' + e.amount + ' skill XP.',
-    greenWave: (e) => 'A friendly cop waves you through. ' + e.amount + ' s saved!',
-    puncture: () => 'Puncture! Top speed down for ' + T.PUNCTURE_TIME + ' s.',
-    fine: (e) => 'Traffic police stop you.' + (e.amount ? ' Fine: ₹' + e.amount + '.' : ' Just a warning.'),
-    brakes: () => 'Brakes feel spongy. Weaker brakes for ' + T.FADE_TIME + ' s.',
-    cancel: (e) => 'Customer cancelled.' + (e.amount ? ' Lost ₹' + e.amount + '.' : ''),
-    skillSlow: (e) => 'Bad day. -' + e.amount + ' skill XP.',
-  };
-  const DEED_TEXT = {
-    giveWay: '+' + T.GIVE_WAY_KARMA + ' karma: you let them cross',
-    letIn: '+' + T.LET_IN_KARMA + ' karma: you let them in',
-    calm: '+' + T.CALM_KARMA + ' karma: calm riding',
-    breaker: '+' + T.BREAKER_SLOW_KARMA + ' karma: gentle over the breaker',
-  };
-  const BUSY_TEXT = {
-    school: "School's out ahead: kids and parents everywhere. Go slow!",
-    market: 'Santhe day ahead: vegetable carts and crowds.',
-    temple: 'Temple utsava ahead: the crowd spills onto the road.',
-    wedding: 'Wedding procession ahead: band, dancing, the works.',
-    cricket: 'Gully cricket ahead. Mind the ball (and the fielders).',
-  };
-  const FIGHT_WHO = { auto: 'the auto driver', car: 'the car driver', bike: 'the biker', bus: 'the bus driver', tanker: 'the tanker driver', ped: 'the pedestrian' };
+  // All toast text lives in client/lines.js (toast.*), so it can be tweaked without touching code.
+  const say = (key, vars) => GameLines.say(key, vars);
+  const WHO = GameLines.WHO;
+  const LUCK_VARS = { steady: T.STEADY_TIME, sugar: T.SUGAR_TIME, puncture: T.PUNCTURE_TIME, fade: T.FADE_TIME };
+  const DEED_KARMA = { giveWay: T.GIVE_WAY_KARMA, letIn: T.LET_IN_KARMA, calm: T.CALM_KARMA, breaker: T.BREAKER_SLOW_KARMA };
+  const GAALI_POOL = { ped: 'gaali.ped', guard: 'gaali.guard', customer: 'gaali.customer' };
+
+  /** Give a gaali its line before the renderer and the toast both use it, so the bubble and toast match. */
+  function prepareEvents(ev) {
+    for (const e of ev) if (e.type === 'gaali' && !e.line) e.line = say(GAALI_POOL[e.who] || 'gaali.driver');
+  }
+
+  function luckText(e) {
+    const vars = Object.assign({ amount: e.amount }, LUCK_VARS);
+    let key = e.vendor && GameLines.has('toast.' + e.vendor) ? e.vendor : e.kind;
+    if (key === 'fine' && !e.amount) key = 'warning';
+    let text = key === 'cancel' && !e.amount ? 'Customer cancelled.' : say('toast.' + key, vars);
+    if (e.source === 'giveWay') text = say('toast.prefixGiveWay') + text;
+    else if (e.source === 'letIn') text = say('toast.prefixLetIn') + text;
+    return text;
+  }
 
   function eventToasts(ev) {
     for (const e of ev) {
-      if (e.type === 'luck') {
-        const prefix = e.source === 'giveWay' ? 'Thank you, beta! ' : e.source === 'letIn' ? 'Thanks, guru! ' : '';
-        toast(prefix + LUCK_TEXT[e.kind](e), e.good ? 'good' : 'bad');
-      } else if (e.type === 'goodDeed') toast(DEED_TEXT[e.kind] || 'Good karma', 'deed');
-      else if (e.type === 'handover') toast(e.kind === 'apartment' ? 'At the gate: security check, then up the lift...' : 'Ringing the bell...', 'deed');
-      else if (e.type === 'delivered') toast('Delivered: ' + e.name + ' · ' + '★'.repeat(e.rating) + '☆'.repeat(5 - e.rating) + (e.tip ? ' · tip ₹' + e.tip : '') + (e.late > 0 ? ' · ' + e.late + ' min late' : ''), e.rating >= 4 ? 'good' : 'bad');
-      else if (e.type === 'busyAhead') toast(BUSY_TEXT[e.kind] || 'Busy stretch ahead.', 'deed');
-      else if (e.type === 'missed') toast('Missed the drop: ' + e.name + '. Order cancelled, −' + T.MISSED_KARMA + ' karma', 'bad');
+      if (e.type === 'luck') toast(luckText(e), e.good ? 'good' : 'bad');
+      else if (e.type === 'goodDeed') toast(say('toast.' + e.kind, { karma: DEED_KARMA[e.kind] }) || 'Good karma', 'deed');
+      else if (e.type === 'delivered') {
+        toast(say('toast.delivered', {
+          name: e.name,
+          stars: '★'.repeat(e.rating) + '☆'.repeat(5 - e.rating),
+          tip: e.tip ? ' · tip ₹' + e.tip : '',
+          late: e.late > 0 ? ' · ' + e.late + ' min late' : '',
+        }), e.rating >= 4 ? 'good' : 'bad');
+      } else if (e.type === 'busyAhead') toast(say('toast.busy_' + e.kind) || 'Busy stretch ahead.', 'deed');
+      else if (e.type === 'missed') toast(say('toast.missed', { name: e.name, karma: T.MISSED_KARMA }), 'bad');
+      else if (e.type === 'dogChase') toast(say('toast.dogChase'), 'bad');
+      else if (e.type === 'dogBite') toast(say('toast.dogBite', { amount: e.amount }), 'bad');
+      else if (e.type === 'dogScared') toast(say('toast.dogScared'), 'deed');
+      else if (e.type === 'gaali') toast(say('toast.gaali', { line: e.line, karma: e.karma }), 'bad');
+      else if (e.type === 'crash' && GameLines.has('toast.crash_' + e.with)) toast(say('toast.crash_' + e.with), 'bad');
       else if (e.type === 'fight') {
-        const who = FIGHT_WHO[e.with] || 'them';
-        if (e.phase === 'sorry') toast('You apologised to ' + who + '. -' + e.karma + ' karma', 'deed');
-        else if (e.phase === 'argue') toast('You argued with ' + who + '. -' + e.karma + ' karma', 'bad');
-        else if (e.phase === 'shouted') toast(cap(who) + ' shouted at you. -' + e.karma + ' karma', 'bad');
+        const vars = { who: WHO[e.with] || 'them', karma: e.karma };
+        if (e.phase === 'sorry') toast(say('toast.fightSorry', vars), 'deed');
+        else if (e.phase === 'moveOn') toast(say('toast.fightMoveOn', vars), 'good');
+        else if (e.phase === 'argue') toast(say('toast.fightArgue', vars), 'bad');
+        else if (e.phase === 'shouted') toast(say('toast.fightShouted', vars), 'bad');
       }
     }
   }
-  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // --- runs ------------------------------------------------------------------------------
   function startRun(id, forcedSeed) {
@@ -291,7 +268,7 @@
     if (s.splashedPeds) bits.push('splashed ' + s.splashedPeds + ' pedestrian' + (s.splashedPeds > 1 ? 's' : ''));
     if (s.potholesHit) bits.push('hit ' + s.potholesHit + ' pothole' + (s.potholesHit > 1 ? 's' : ''));
     if (s.footpathSeconds >= 3) bits.push('spent ' + Math.round(s.footpathSeconds) + ' s on the footpath');
-    const when = World.fmtClock(r.arrivalGameTime).replace(/^0/, '');
+    const when = World.fmtClock(r.arrivalGameTime + (T.TOD_SHIFT[state.tod] || 0)).replace(/^0/, '');
     if (!bits.length) return 'Zero potholes, zero drama. Are you sure this was Bengaluru? In by ' + when + '.';
     const list = bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0];
     return 'You ' + list + (r.minutesEarly >= 0 ? ', and still made it by ' : ', and rolled in at ') + when + '.';
@@ -322,7 +299,7 @@
     $('res-title').textContent = r.outcome === 'breakdown'
       ? 'Your Yolo broke down'
       : r.mode === 'delivery' ? (r.delivered === r.total ? 'Shift complete!' : 'Shift over: ' + r.delivered + '/' + r.total + ' delivered')
-      : early >= 0 ? 'Made it! ' + World.fmtClock(r.arrivalGameTime) : 'Late by ' + Math.ceil(-early) + ' min';
+      : early >= 0 ? 'Made it! ' + World.fmtClock(r.arrivalGameTime + (T.TOD_SHIFT[state.tod] || 0)) : 'Late by ' + Math.ceil(-early) + ' min';
     $('res-stars').textContent = stars(r.stars);
     $('res-stars').setAttribute('aria-label', r.stars + ' of 3 stars');
     $('res-summary').textContent = summaryLine(r);
@@ -363,7 +340,12 @@
       if (toastTimer <= 0) $('toast').className = '';
     }
     $('fight').hidden = !(p.fight > 0 && p.fightWith);
-    if (p.fight > 0) $('fight-who').textContent = 'Argument with ' + (FIGHT_WHO[p.fightWith] || 'them') + '!';
+    if (p.fight > 0) {
+      $('fight-who').textContent = (p.fightDebate ? 'Heated debate with ' : 'Argument with ') + (WHO[p.fightWith] || 'them') + '!';
+      $('fight-how').textContent = p.fightDebate
+        ? 'HORN to argue back (costly) · BRAKE to be responsible and move on'
+        : 'Hold BRAKE to apologise (−' + T.APOLOGY_KARMA + ' karma) · HORN to argue back (costly)';
+    }
   }
 
   // --- loop --------------------------------------------------------------------------------
@@ -387,6 +369,7 @@
       const t0 = performance.now();
       const ev = Sim.step(state, inp);
       simMs = simMs * 0.95 + (performance.now() - t0) * 0.05;
+      prepareEvents(ev);
       R.onEvents(ev, state);
       audio.onEvents(ev, state);
       eventToasts(ev);
@@ -403,7 +386,9 @@
       interp.begin(); interp.add(demo.st.players); interp.add(demo.st.npcs); interp.add(demo.st.peds);
       const inp = Bot.act(demo.st, demo.mem);
       lastInput = inp;
-      R.onEvents(Sim.step(demo.st, inp), demo.st);
+      const ev = Sim.step(demo.st, inp);
+      prepareEvents(ev);
+      R.onEvents(ev, demo.st);
     }
   }
 
@@ -430,18 +415,21 @@
   function click() { audio.sfx.click(); }
   const on = (id, f) => $(id).addEventListener('click', () => { click(); f(); });
   on('b-play', () => setMode('mode'));
+  on('b-gear', () => {
+    const open = $('title-settings').hidden;
+    $('title-settings').hidden = !open;
+    $('b-gear').setAttribute('aria-expanded', String(open));
+  });
   on('b-mode-commute', () => { rideMode = 'commute'; renderLevels(); setMode('levels'); });
   on('b-mode-delivery', () => { rideMode = 'delivery'; renderLevels(); setMode('levels'); });
   on('b-mode-back', () => setMode('title'));
   on('b-levels-back', () => setMode('mode'));
-  on('b-brief-back', () => { renderLevels(); setMode('levels'); });
-  on('b-ride', () => startRun(levelId));
   on('btn-pause', pause);
   on('b-resume', resume);
   on('b-restart', () => startRun(levelId));
   on('b-quit', quit);
   on('b-retry', () => startRun(levelId));
-  on('b-next', () => { const ids = World.levelsOf(World.level(levelId).mode); levelId = ids[ids.indexOf(levelId) + 1]; openBrief(); });
+  on('b-next', () => { const ids = World.levelsOf(World.level(levelId).mode); startRun(ids[ids.indexOf(levelId) + 1]); });
   on('b-res-levels', () => { state = null; renderLevels(); setMode('levels'); });
 
   // Audio needs a user gesture (SPEC §10.4).
@@ -462,8 +450,8 @@
 
   function renderControlsHelp() {
     $('title-controls').textContent = isTouch
-      ? 'Touch: hold the left handle (bottom left) and slide to steer · BRAKE and HORN bottom right · ❚❚ to pause'
-      : 'Keyboard: ← → steer · ↓ brake · Space horn · P pause';
+      ? 'Touch controls\nSlide the LEFT HANDLE (bottom left) to steer\nBRAKE and HORN: bottom right\n❚❚ (top right) to pause'
+      : 'Keyboard controls\n← →  steer\n↓  brake\nSpace  horn\nP  pause';
   }
 
   // Phone feel: a short buzz on hits (Android; iOS has no vibration API). Off with "Reduce shake".

@@ -1,6 +1,6 @@
 # Concept: the two modes, and grocery delivery
 
-**Files:** `shared/world.js` (`LEVELS[].mode`, `drops`, delivery tunables), `shared/sim.js` (`deliverOrder`, `missOrder`, `nextOrder`, `score`), `shared/bot.js` (drop approach), `client/main.js` (mode screen, briefing, results), `client/render.js` (pins, zones, gates, houses, phone) · **Tests:** `tests/delivery.test.js`, `tests/complete-l4..6.test.js`
+**Files:** `shared/world.js` (`LEVELS[].mode`, `drops`, delivery tunables), `shared/sim.js` (`deliverOrder`, `missOrder`, `nextOrder`, `score`), `shared/bot.js` (drop approach), `client/main.js` (mode screen, results), `client/render.js` (pins, zones, gates, houses, phone) · **Tests:** `tests/delivery.test.js`, `tests/complete-l4..6.test.js`
 
 ## Modes
 | Mode | Levels | Goal | Clock | Result |
