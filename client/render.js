@@ -1066,8 +1066,6 @@
         const lean = n.kind === 'bike' ? Math.max(-0.25, Math.min(0.25, (n.vx || 0) * 0.08)) * (front ? -1 : 1) : 0;
         if (lean) { ctx.save(); ctx.translate(sx, PY(0, dN)); ctx.rotate(lean); sprites.draw(ctx, key, 0, -hgt * k / 2, 0, k); ctx.restore(); }
         else sprites.draw(ctx, key, sx, PY(hgt / 2, dN), 0, k);
-<<<<<<< HEAD
-=======
         if (tod !== 'day' && n.kind !== 'cart' && lamps.length < 60) { // headlights coming at us, tail lights going away
           const ly = PY(n.kind === 'bike' ? 0.8 : 0.55, dN);
           const c = front ? 'rgba(255,240,200,0.9)' : 'rgba(255,40,30,0.8)';
@@ -1075,7 +1073,6 @@
           if (n.kind === 'bike') lamps.push({ x: sx, y: ly, r, c });
           else { lamps.push({ x: PX(x - n.w * 0.36, dN, b), y: ly, r, c }); lamps.push({ x: PX(x + n.w * 0.36, dN, b), y: ly, r, c }); }
         }
->>>>>>> 1bebcb1 (v1.2)
         if (n.trait === 'slow' && k > 25) { // learner: the L board
           const lx = sx + n.w * 0.25 * k;
           const ly = PY(hgt * 0.55, dN);
@@ -1758,12 +1755,8 @@
             const who = e.with === 'ped' || e.with === 'vendor' ? 'ped' : 'npc';
             const id = e.with === 'vendor' ? 0 : e.id;
             if (e.with === 'vendor') break;
-<<<<<<< HEAD
-            if (e.phase === 'start') bubble(who, id, S('ped.fightStart'));
-=======
             if (e.phase === 'start' && !e.debate) bubble(who, id, S('ped.fightStart'));
             else if (e.phase === 'moveOn') bubble('player', 0, S('me.moveOn'));
->>>>>>> 1bebcb1 (v1.2)
             else if (e.phase === 'sorry') { bubble('player', 0, S('me.sorry')); bubble(who, id, S('ped.fightCalm'), 0.5); }
             else if (e.phase === 'argue') { bubble('player', 0, S('me.argue')); bubble(who, id, S('ped.fightAngry'), 0.4); }
             else if (e.phase === 'shouted') bubble(who, id, S('ped.fightEnd'));
