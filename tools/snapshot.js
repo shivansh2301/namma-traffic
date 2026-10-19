@@ -52,7 +52,7 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 const files = [
   'kit/rng/rng.js', 'kit/fixed-step/fixed-step.js', 'kit/camera/camera.js', 'kit/sprites/sprites.js', 'kit/particles/particles.js',
-  'shared/world.js', 'shared/sim.js', 'shared/bot.js', 'client/hud.js', 'client/render.js', 'client/render-top.js',
+  'shared/world.js', 'shared/sim.js', 'shared/bot.js', 'client/lines.js', 'client/hud.js', 'client/render.js', 'client/render-top.js',
 ];
 for (const f of files) vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
 

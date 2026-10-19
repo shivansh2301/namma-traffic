@@ -1,7 +1,7 @@
 # AGENTS.md: start here
 
 Namma Commute: a browser game about riding a Yolo (small EV scooter) through
-Bengaluru traffic, seen from just behind the scooter (or from the seat), in two modes: **Office commute** (reach the
+Bengaluru traffic, seen from the seat (or from just behind the scooter), in two modes: **Office commute** (reach the
 tech park by 10:00, levels 1–3) and **Grocery delivery** (10-minute orders to
 apartment towers and gully houses, levels 4–6). Plain JavaScript, Canvas 2D, Web Audio,
 no build step, no runtime dependencies. `SPEC.md` is the original v1 spec;
@@ -32,6 +32,8 @@ docs/concepts/             design concepts (read the one for the area you touch)
   traffic-and-npc-life.md    vehicles, following, lane changes, courtesy, spawning, jams, NPC interactions
   karma-and-luck.md          karma, fights, good deeds, luck events, rider skill, score
   delivery-missions.md       the two modes, delivery shifts, drop zones, ratings, areas, busy gullies, junctions
+  street-life.md             stalls, dogs, drains, manholes, slips, gaali/debate, time of day
+  dialogue.md                where every line lives and how to change it
   first-person-view.md       pseudo-3D projection, chase camera vs cockpit, bends, draw order, touch left handle
   procedural-art.md          palette, silhouettes, streets, tone of voice
 kit/                       reusable, game-agnostic components, each with README + test (see kit/README.md)
@@ -40,9 +42,10 @@ shared/sim.js              deterministic simulation: create/step/result/score (p
 shared/bot.js              scripted rider for tests, calibration and the title demo (pure)
 client/index.html          page, CSS, screens; loads every script with <script defer>
 client/main.js             loop, screens, toasts, persistence, PWA registration
-client/render.js           road renderer: chase camera (default) and cockpit
+client/render.js           road renderer: cockpit (default) and chase camera
 client/render-top.js       top-down map renderer
 client/hud.js              shared HUD and the touch left-handle control
+client/lines.js            every line of dialogue and toast text (edit freely)
 client/input.js            keyboard + touch -> { steer, brake, horn }
 client/audio.js            synthesised sounds (EV motor, horns, splashes, luck chimes)
 client/sw.js, manifest.webmanifest, icon.svg   offline/PWA
@@ -81,9 +84,9 @@ tools/snapshot.js          headless frame rendering
   (run stream); interact in `updatePlayer`; emit an event; draw it in both
   renderers (ground items go in `drawGround`, upright ones in `collect`);
   add a rule test.
+- **New line of dialogue:** edit `client/lines.js` (see `docs/concepts/dialogue.md`).
 - **New karma deed or luck event:** add to `deedsTick` / `luck()` and the
-  `LUCK_GOOD` / `LUCK_BAD` weights; add toast text in `client/main.js`
-  (`DEED_TEXT` / `LUCK_TEXT`) and an HUD chip in `client/hud.js` if it is timed.
+  `LUCK_GOOD` / `LUCK_BAD` weights; add toast text under `toast.*` in `client/lines.js` and an HUD chip in `client/hud.js` if it is timed.
 - **New NPC interaction:** add a mode/state to the record (initialise it in
   `newNpc`/`newPed` so JSON stays consistent), emit an event, add bubble
   lines in `client/render.js` `onEvents`; add it to the NPC-life test.
@@ -105,6 +108,8 @@ economy (fights, deeds, luck, skill, tips), bends and turns, NPC life, more cars
 and kerb parking, tech-park finishes, and the grocery delivery mode (gullies,
 towers, drop zones, ratings), short ~2-minute trips, parody brand names,
 phone touch controls (a visible left handle to steer, BRAKE/HORN buttons, auto
-quality), a chase camera behind the scooter as the default view, and random
-busy gully stretches. All tests pass (`node --test`). Not yet verified on a
+quality), a chase camera behind the scooter, random
+busy gully stretches, street life (stalls, dogs, drains, manholes, slips),
+gaali and heated debates, handover scenes, NPC personalities, evening/night
+runs, and all dialogue in `client/lines.js`. Default view: from the seat. All tests pass (`node --test`). Not yet verified on a
 real phone.

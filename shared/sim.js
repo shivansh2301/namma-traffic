@@ -220,7 +220,7 @@
       hornCd: 0, hornLog: [],
       surface: 'road', pothole: 0, puddle: 0, bumpAcc: 0, scrapeT: 0,
       // fights (after a clash)
-      fight: 0, fightWith: '', fightId: 0, fightSorry: 0, fightArgued: 0,
+      fight: 0, fightWith: '', fightId: 0, fightSorry: 0, fightArgued: 0, fightDebate: 0,
       // karma economy: luck timer, calm-riding timer, timed effects, wallet, XP gifts
       luckT: T.LUCK_FIRST, calmT: 0, letInT: 0,
       steadyT: 0, sugarT: 0, punctureT: 0, fadeT: 0, haltT: 0,
@@ -677,6 +677,13 @@
   }
 
   /** opts: { skill } (rider skill level 0..SKILL_MAX from the player's profile). */
+  function todFor(seed, levelId) {
+    const h = { rng: Rng.hash(seed, levelId, 'tod') | 0 };
+    Rng.next(h);
+    const r = Rng.next(h);
+    return r < T.TOD_NIGHT ? 'night' : r < T.TOD_NIGHT + T.TOD_EVENING ? 'evening' : 'day';
+  }
+
   function create(levelId, seed, opts) {
     const L = World.level(levelId);
     seed = seed >>> 0;
@@ -687,6 +694,8 @@
       tick: 0,
       rng: Rng.hash(seed, 'run') | 0,
       weather: L.weather,
+      // Time of day is only a look (and a clock shift on screen); own stream so layouts stay put.
+      tod: todFor(seed, levelId),
       time: L.startTime,
       deadline: L.deadline,
       nextId: 1,
@@ -1616,6 +1625,7 @@
       const isPed = angry.kind == null;
       gaali(st, p, isPed ? 'ped' : angry.kind, angry.id, angry.x, angry.y, ev);
       if (!isPed && angry.honk <= 0) { angry.honk = 2; ev.push({ type: 'honkNpc', id: angry.id, x: angry.x, y: angry.y, kind: angry.kind, atPlayer: true, angry: true }); }
+      startDebate(st, p, isPed ? 'ped' : angry.kind, angry, ev);
     }
     for (const pd of st.peds) {
       const dy = pd.y - p.y;
@@ -1683,10 +1693,25 @@
       p.fightId = other.id;
       p.fightSorry = 0;
       p.fightArgued = 0;
+      p.fightDebate = 0;
       p.fights++;
       if (party !== 'ped' && party !== 'vendor') other.stop = Math.max(other.stop, T.FIGHT_TIME);
       ev.push({ type: 'fight', phase: 'start', with: party, id: other.id, pid: p.id });
     }
+  }
+
+  /** A gaali turns into a heated debate: HORN argues back, BRAKE is the responsible way out (no karma lost). */
+  function startDebate(st, p, party, other, ev) {
+    if (T.FIGHT_KARMA[party] == null || p.fight > 0 || p.crash > 0 || p.handT > 0) return;
+    p.fight = T.DEBATE_TIME;
+    p.fightWith = party;
+    p.fightId = other.id;
+    p.fightSorry = 0;
+    p.fightArgued = 0;
+    p.fightDebate = 1;
+    p.fights++;
+    if (party !== 'ped') other.stop = Math.max(other.stop || 0, T.DEBATE_TIME);
+    ev.push({ type: 'fight', phase: 'start', with: party, id: other.id, pid: p.id, debate: true });
   }
 
   /** During an argument: hold BRAKE to apologise, HORN to argue back. Returns true if the horn was used. */
@@ -1697,8 +1722,9 @@
     if (inp.brake && !p.fightArgued) {
       p.fightSorry += DT;
       if (p.fightSorry >= T.APOLOGY_HOLD) {
-        loseKarma(p, T.APOLOGY_KARMA);
-        ev.push({ type: 'fight', phase: 'sorry', with: party, id: p.fightId, karma: T.APOLOGY_KARMA, pid: p.id });
+        const cost = p.fightDebate ? 0 : T.APOLOGY_KARMA;
+        loseKarma(p, cost);
+        ev.push({ type: 'fight', phase: p.fightDebate ? 'moveOn' : 'sorry', with: party, id: p.fightId, karma: cost, pid: p.id });
         p.fight = 0;
         p.fightWith = '';
         return false;
@@ -1717,7 +1743,7 @@
     }
     if (p.fight <= 0) {
       p.fight = 0;
-      if (!p.fightArgued) {
+      if (!p.fightArgued && !p.fightDebate) {
         const cost = T.FIGHT_KARMA[party] / 2;
         loseKarma(p, cost);
         ev.push({ type: 'fight', phase: 'shouted', with: party, id: p.fightId, karma: cost, pid: p.id });
@@ -2107,7 +2133,7 @@
     for (const d of st.dogs) {
       if (d.mode !== 'sleep' || d.y > p.y + 3 || d.y < p.y - 3) continue;
       if (Math.abs(d.x - p.x) < hw + (T.DOG_W / 2) * f && Math.abs(d.y - p.y) < hl + (T.DOG_L / 2) * f) {
-        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x + (p.x >= d.x ? 1 : -1) * T.EDGE_ROUND_SPEED * DT; p.y = prev.y; p.v = 0; continue; } // walk it round
         crash(st, p, 'dog', d, ev);
         return;
       }
@@ -2115,7 +2141,7 @@
     for (const k of st.stalls) {
       if (k.y > p.y + 4 || k.y < p.y - 4) continue;
       if (Math.abs(k.x - p.x) < hw + k.w / 2 && Math.abs(k.y - p.y) < hl + k.l / 2) {
-        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x + (k.x < 1 ? 1 : -1) * T.EDGE_ROUND_SPEED * DT; p.y = prev.y; p.v = 0; continue; } // walk it round, road side
         crash(st, p, 'stall', k, ev);
         return;
       }

@@ -40,6 +40,11 @@
   h2 { font-size: 26px; margin: 0; }
   p { margin: 0; font-size: 16px; line-height: 1.45; max-width: 34ch; }
   .small { font-size: 14px; color: var(--dim); }
+  .controls { white-space: pre-line; font: 600 18px/1.6 var(--font); margin: 14px 0 8px; padding: 12px 16px; border: 1px solid #3a414c; border-radius: 12px; background: rgba(255,255,255,0.04); text-align: left; display: inline-block; }
+  .controls::first-line { color: var(--accent); font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .gear { display: block; margin: 6px auto 0; font: 600 16px var(--font); padding: 10px 16px; min-height: 44px; border-radius: 10px; border: 1px solid #3a414c; background: transparent; color: var(--text); cursor: pointer; }
+  .gear[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  .gear:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
   .btn {
     min-height: 50px; min-width: 200px; padding: 12px 22px; font: 700 18px var(--font); border: 0; border-radius: 14px;
     background: var(--accent); color: var(--accent-text); cursor: pointer;
@@ -107,7 +112,7 @@
       <button id="btn-pause" class="hud-btn" aria-label="Pause">❚❚</button>
       <div id="hint" role="status" aria-live="polite"></div>
       <div id="toast" role="status" aria-live="polite"></div>
-      <div id="fight" hidden role="alert"><strong id="fight-who">Argument!</strong>Hold BRAKE to apologise (−2 karma) · HORN to argue back (costly)</div>
+      <div id="fight" hidden role="alert"><strong id="fight-who">Argument!</strong><span id="fight-how"></span></div>
       <div id="touch" hidden>
         <button id="btn-horn" class="tbtn" aria-label="Horn">HORN</button>
         <button id="btn-brake" class="tbtn" aria-label="Brake">BRAKE</button>
@@ -119,8 +124,9 @@
       <p>Ride your Yolo through Bengaluru: to the office by 10:00, or groceries to the door in 10 minutes. Give way, stay calm: good karma brings tips and treats.</p>
       <p id="rider"></p>
       <button class="btn" id="b-play" data-focus>Play</button>
-      <div class="settings"></div>
-      <p class="small" id="title-controls">Keyboard: ← → steer · ↓ brake · Space horn · P pause</p>
+      <p class="controls" id="title-controls">Keyboard controls</p>
+      <button class="gear" id="b-gear" aria-expanded="false" aria-controls="title-settings" aria-label="Settings">⚙ Settings</button>
+      <div class="settings" id="title-settings" hidden></div>
     </section>
 
     <section id="scr-mode" class="screen" hidden>
@@ -142,19 +148,6 @@
       <h2 id="levels-title">Choose your commute</h2>
       <div id="level-list" class="list"></div>
       <button class="btn secondary" id="b-levels-back">Back</button>
-    </section>
-
-    <section id="scr-brief" class="screen" hidden>
-      <div class="card">
-        <h2 id="brief-name"></h2>
-        <p id="brief-meta" class="small"></p>
-        <p id="brief-blurb"></p>
-        <ol id="brief-orders" class="orders" hidden></ol>
-        <p id="brief-best" class="small"></p>
-        <p id="brief-controls" class="small"></p>
-      </div>
-      <button class="btn" id="b-ride" data-focus>Ride</button>
-      <button class="btn secondary" id="b-brief-back">Back</button>
     </section>
 
     <section id="scr-pause" class="screen" hidden>

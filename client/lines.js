@@ -99,6 +99,7 @@
       argue: ['You started it!', 'Neeve nodi!', 'Side kodi!', 'Tu dekh ke chala!'],
       slip: ['Whoa-oa-oa!', 'Ayyo, slipped!'],
       bitten: ['AAAH! My leg!', 'Ayyo, nayi!'],
+      moveOn: ['Chill, chill. Going.', 'Sorry boss, chalo.', 'Leave it, macha.', 'Theek hai, theek hai.'],
     },
 
     // ---- toasts (top of the screen) ------------------------------------------------
@@ -132,6 +133,7 @@
       fightSorry: ['You apologised to {who}. −{karma} karma'],
       fightArgue: ['You argued with {who}. −{karma} karma'],
       fightShouted: ['{Who} shouted at you. −{karma} karma'],
+      fightMoveOn: ['You let it go and rode on. Responsible!', 'Deep breath. You moved on.'],
       // street life
       busy_school: ["School's out ahead: kids and parents everywhere. Go slow!"],
       busy_market: ['Santhe day ahead: vegetable carts and crowds.'],

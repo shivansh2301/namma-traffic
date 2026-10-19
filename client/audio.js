@@ -83,6 +83,15 @@
       hiss() {
         synth.noise({ dur: 0.9, gain: 0.12, filter: { type: 'highpass', freq: 3000 } });
       },
+      bark(pn) {
+        for (let i = 0; i < 2; i++) synth.tone({ type: 'sawtooth', freq: 520, freqEnd: 260, dur: 0.09, gain: 0.06, pan: pn, delay: i * 0.18, filter: { type: 'bandpass', freq: 900, Q: 1.2 } });
+      },
+      yelp() {
+        synth.tone({ type: 'sawtooth', freq: 900, freqEnd: 1400, dur: 0.18, gain: 0.06, filter: { type: 'bandpass', freq: 1200, Q: 1 } });
+      },
+      whoosh(pn) {
+        synth.noise({ dur: 0.35, gain: 0.08, pan: pn, filter: { type: 'bandpass', freq: 600, freqEnd: 1800, Q: 0.7 } });
+      },
       ping() { // app notification
         synth.tone({ type: 'sine', freq: 1046, dur: 0.08, gain: 0.07 });
         synth.tone({ type: 'sine', freq: 1568, dur: 0.12, gain: 0.06, delay: 0.09 });
@@ -135,6 +144,12 @@
             case 'wrongSide': sfx.warn(); break;
             case 'arrive': case 'shiftDone': sfx.arrive(); break;
             case 'handover': sfx.ping(); break;
+            case 'handStep': if (/bell|door/.test(e.step)) sfx.doorbell(); else sfx.ping(); break;
+            case 'bark': case 'dogChase': if (Math.abs(e.y - p.y) < 25) sfx.bark(pan(e, p)); break;
+            case 'dogBite': sfx.yelp(); break;
+            case 'dogScared': sfx.yelp(); break;
+            case 'bikePass': sfx.whoosh(pan(e, p)); break;
+            case 'gaali': sfx.grumble(); break;
             case 'delivered': sfx.doorbell(); if (e.tip) sfx.coins(); break;
             case 'missed': sfx.ringtone(); break;
             case 'breakdown': sfx.breakdown(); break;

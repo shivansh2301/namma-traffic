@@ -156,8 +156,19 @@ test('client mode screen leads to the delivery shifts', () => {
   assert.equal(env.els['scr-levels'].hidden, false);
   assert.equal(env.els['level-list'].children.length, 3);
   env.els['level-list'].children[0].dispatch('click', {});
-  assert.equal(env.els['scr-brief'].hidden, false);
-  assert.equal(env.els['brief-orders'].hidden, false);
+  assert.equal(env.els['scr-levels'].hidden, true, 'a shift starts straight from the list');
+  assert.equal(env.els['hud'].hidden, false);
+});
+
+test('client title settings fold away behind the gear button', () => {
+  const env = makeEnv('');
+  env.frames(5);
+  const panel = env.ctx.document.getElementById('title-settings');
+  panel.hidden = true; // as in index.html
+  env.click('b-gear');
+  assert.equal(panel.hidden, false);
+  env.click('b-gear');
+  assert.equal(panel.hidden, true);
 });
 
 test('client runs the top-down map view', () => {
@@ -166,7 +177,7 @@ test('client runs the top-down map view', () => {
   assert.equal(env.els['scr-pause'].hidden, true);
 });
 
-test('client walks the screens: title -> levels -> brief -> ride -> quit', () => {
+test('client walks the screens: title -> levels -> ride -> quit', () => {
   const env = makeEnv('');
   env.frames(10);
   env.click('b-play');
@@ -176,8 +187,7 @@ test('client walks the screens: title -> levels -> brief -> ride -> quit', () =>
   const list = env.els['level-list'];
   assert.equal(list.children.length, 3);
   list.children[0].dispatch('click', {});
-  assert.equal(env.els['scr-brief'].hidden, false);
-  env.click('b-ride');
+  assert.equal(env.els['hud'].hidden, false, 'no briefing screen: the ride starts');
   env.frames(300);
   env.click('btn-pause');
   env.click('b-quit');

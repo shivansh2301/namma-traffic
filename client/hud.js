@@ -63,7 +63,7 @@
     const next = delivery ? Sim.nextOrder(st) : null;
     if (delivery) {
       ctx.fillStyle = COL.text;
-      ctx.fillText(World.fmtClock(st.time), 12, 17);
+      ctx.fillText(World.fmtClock(st.time + (World.T.TOD_SHIFT[st.tod] || 0)), 12, 17);
       if (next) {
         const left = next.due - st.time;
         const s = Math.floor(Math.abs(left));
@@ -72,7 +72,7 @@
       }
     } else {
       ctx.fillStyle = st.time > st.deadline ? COL.late : COL.text;
-      ctx.fillText(World.fmtClock(st.time) + ' / ' + World.fmtClock(st.deadline), 12, 17);
+      ctx.fillText(World.fmtClock(st.time + (World.T.TOD_SHIFT[st.tod] || 0)) + ' / ' + World.fmtClock(st.deadline + (World.T.TOD_SHIFT[st.tod] || 0)), 12, 17);
     }
     ctx.textAlign = 'right';
     const RW = W - PAUSE_W; // the top-right corner belongs to the pause button

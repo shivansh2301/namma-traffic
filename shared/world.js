@@ -87,7 +87,8 @@
     INVULN_TIME: 2.0,
     CRASH_COST: { vehicle: 20, headOn: 30, cow: 20, barricade: 15, ped: 10, slip: 8, drain: 15, dog: 8, stall: 10 },
     CRASH_KARMA: { vehicle: 0, headOn: 0, cow: 15, barricade: 0, ped: 20, slip: 0, drain: 0, dog: 10, stall: 5 },
-    PED_SAFE_SPEED: 1.5, // m/s: (nearly) stopped, a pedestrian walking into you is a nudge, not a crash
+    PED_SAFE_SPEED: 1.5,
+    EDGE_ROUND_SPEED: 1.2, // m/s sideways when nosing slowly into a stall or a sleeping dog // m/s: (nearly) stopped, a pedestrian walking into you is a nudge, not a crash
     HITBOX_FORGIVE: 0.9, // collision boxes are scaled by this; feels fairer
     SCRAPE_SPEED: 1.5, // m/s relative; slower contact with a vehicle stops you instead of crashing (docs/DECISIONS.md)
 
@@ -98,6 +99,10 @@
     // to apologise (cheap), HORN to argue (expensive), or get shouted at (half).
     FIGHT_TIME: 3.0,
     APOLOGY_HOLD: 0.4,
+    DEBATE_TIME: 3.0, // a gaali turns into a heated debate: HORN argues, BRAKE moves on
+    TOD_EVENING: 0.2, // chance a run is in the evening (look only)
+    TOD_NIGHT: 0.2, // chance a run is at night (look only)
+    TOD_SHIFT: { day: 0, evening: 9 * 3600, night: 12 * 3600 }, // clock shown on screen
     APOLOGY_KARMA: 2,
     ARGUE_MORE_KARMA: 4,
     FIGHT_KARMA: { auto: 15, car: 10, bike: 10, bus: 8, tanker: 8, ped: 15, vendor: 10 },
@@ -374,7 +379,7 @@
   };
 
   // Gully mix: lots of bikes and autos, carts, fewer cars (but they are parked everywhere).
-  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0.3 };
+  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0.4 };
 
   const LEVELS = [
     // ---- Office commute: be at the tech park by 10:00 -------------------------
@@ -385,7 +390,7 @@
       weather: 'clear',
       start: '09:36',
       blurb: 'Narrow 1+1 lanes, cows, potholes and footpaths that come and go, then the tech park gate. Wrong-side riders near the end.',
-      mix: { bike: 4, auto: 3, car: 4, bus: 0, tanker: 0 },
+      mix: { bike: 4, auto: 3, car: 4, bus: 0, tanker: 0.5 },
       destination: { kind: 'techpark', name: 'Koramangala Tech Hub' },
       landmarks: [
         { at: 0, name: 'Home, 6th Block' },
@@ -508,7 +513,7 @@
       weather: 'clear',
       start: '18:30',
       blurb: 'Three orders. Two houses deep in the gullies, then an apartment tower. Parked cars, cows, carts and two-way traffic in lanes barely wide enough.',
-      mix: { bike: 4, auto: 3, car: 4, cart: 0.6, bus: 0, tanker: 0 },
+      mix: { bike: 4, auto: 3, car: 4, cart: 0.6, bus: 0, tanker: 0.4 },
       drops: [
         { at: 198, kind: 'house', name: 'No. 42, 3rd Cross', due: '18:34' },
         { at: 422, kind: 'house', name: 'Sri Lakshmi Nilaya, 5th Main', due: '18:36' },

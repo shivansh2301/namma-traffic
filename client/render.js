@@ -49,6 +49,9 @@
   const PAL = {
     sky0: '#7fb2d9', sky1: '#e6dfcb', skyRain0: '#5e6b77', skyRain1: '#a7aeb2',
     fog: '#d9d4c3', fogRain: '#9aa2a6',
+    // evening and night (st.tod): sky top/bottom, fog, skyline, darkness over the world
+    skyEve0: '#3d3f78', skyEve1: '#f2a065', fogEve: '#c79a86', skylineEve: '#5b4c63',
+    skyNight0: '#060a18', skyNight1: '#1f2747', fogNight: '#161b2c', skylineNight: '#111727',
     ground: '#76694f', asphalt: '#474b52', asphalt2: '#43474e', asphaltWet: '#33383f', asphaltWet2: '#30353b',
     line: '#ece6d6', yellow: '#f4c20d', slab: '#b9b09e', dirt: '#8a7253', median: '#5b8a3c', kerbA: '#202020', kerbB: '#e8c547',
     puddle: 'rgba(92,120,148,0.9)', puddleHi: 'rgba(225,238,248,0.55)', pothole: '#1c1814', potholeRim: '#5a534a',
@@ -453,6 +456,34 @@
       return '#' + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
     }
     let fogCol = PAL.fog;
+    let tod = 'day';
+
+    /** Evening and night: darken the world, then add our headlight pool and lamp glows on top. */
+    function drawDusk() {
+      const night = tod === 'night';
+      ctx.fillStyle = night ? 'rgba(6,10,30,0.55)' : 'rgba(60,25,70,0.2)';
+      ctx.fillRect(-W, -H, W * 3, H * 3);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const cx = W / 2;
+      const cy = camMode === 'chase' ? H * 0.72 : H * 0.8;
+      const g = ctx.createRadialGradient(cx, cy, 10, cx, cy - H * 0.1, W * 0.55);
+      g.addColorStop(0, night ? 'rgba(255,236,190,0.30)' : 'rgba(255,220,170,0.12)');
+      g.addColorStop(1, 'rgba(255,236,190,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, hY, W, H - hY);
+      for (const l of lamps) {
+        const r = l.r * (night ? 1 : 0.6);
+        const lg = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, r);
+        lg.addColorStop(0, l.c);
+        lg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = lg;
+        ctx.fillRect(l.x - r, l.y - r, r * 2, r * 2);
+      }
+      ctx.restore();
+      lamps.length = 0;
+    }
+    const lamps = []; // glows queued while drawing vehicles, painted after the darkness
     function fogged(hex, d) {
       const t = d < 35 ? 0 : Math.min(0.85, (d - 35) / (FAR - 35));
       const q = Math.round(t * 16);
@@ -568,18 +599,33 @@
     }
     function drawSky(wet) {
       const g = ctx.createLinearGradient(0, 0, 0, hY);
-      g.addColorStop(0, wet ? PAL.skyRain0 : PAL.sky0);
-      g.addColorStop(1, wet ? PAL.skyRain1 : PAL.sky1);
+      const night = tod === 'night';
+      const eve = tod === 'evening';
+      g.addColorStop(0, night ? PAL.skyNight0 : eve ? PAL.skyEve0 : wet ? PAL.skyRain0 : PAL.sky0);
+      g.addColorStop(1, night ? PAL.skyNight1 : eve ? PAL.skyEve1 : wet ? PAL.skyRain1 : PAL.sky1);
       ctx.fillStyle = g;
       ctx.fillRect(-W, -H, W * 3, hY + H + 2);
       if (!skyline) skyline = makeSkyline();
       const shift = ((heading * W * 0.9) % (W * 3) + W * 3) % (W * 3);
-      ctx.fillStyle = wet ? '#848d93' : '#b9b8ae';
+      ctx.fillStyle = night ? PAL.skylineNight : eve ? PAL.skylineEve : wet ? '#848d93' : '#b9b8ae';
       for (let k = -1; k <= 1; k++) {
         for (let i = 0; i < skyline.length; i += 3) {
           const x = skyline[i] - shift + k * W * 3 - W;
           if (x > W * 2 || x + skyline[i + 2] < -W) continue;
           ctx.fillRect(x, hY - skyline[i + 1] + shakeY, skyline[i + 2] - 2, skyline[i + 1] + 2);
+        }
+      }
+      if (night || eve) { // lit windows
+        ctx.fillStyle = night ? 'rgba(255,214,120,0.85)' : 'rgba(255,214,120,0.45)';
+        for (let k = -1; k <= 1; k++) {
+          for (let i = 0; i < skyline.length; i += 3) {
+            const x = skyline[i] - shift + k * W * 3 - W;
+            if (x > W * 2 || x + skyline[i + 2] < -W) continue;
+            for (let j = 0; j < 6; j++) {
+              if (h01(i, j, 7) < 0.55) continue;
+              ctx.fillRect(x + 3 + h01(i, j, 8) * (skyline[i + 2] - 9), hY - skyline[i + 1] + 4 + h01(i, j, 9) * (skyline[i + 1] - 10) + shakeY, 3, 3);
+            }
+          }
         }
       }
       ctx.fillStyle = fogCol;
@@ -1020,6 +1066,16 @@
         const lean = n.kind === 'bike' ? Math.max(-0.25, Math.min(0.25, (n.vx || 0) * 0.08)) * (front ? -1 : 1) : 0;
         if (lean) { ctx.save(); ctx.translate(sx, PY(0, dN)); ctx.rotate(lean); sprites.draw(ctx, key, 0, -hgt * k / 2, 0, k); ctx.restore(); }
         else sprites.draw(ctx, key, sx, PY(hgt / 2, dN), 0, k);
+<<<<<<< HEAD
+=======
+        if (tod !== 'day' && n.kind !== 'cart' && lamps.length < 60) { // headlights coming at us, tail lights going away
+          const ly = PY(n.kind === 'bike' ? 0.8 : 0.55, dN);
+          const c = front ? 'rgba(255,240,200,0.9)' : 'rgba(255,40,30,0.8)';
+          const r = Math.min(front ? 22 : 9, Math.max(3, k * (front ? 0.5 : 0.25)));
+          if (n.kind === 'bike') lamps.push({ x: sx, y: ly, r, c });
+          else { lamps.push({ x: PX(x - n.w * 0.36, dN, b), y: ly, r, c }); lamps.push({ x: PX(x + n.w * 0.36, dN, b), y: ly, r, c }); }
+        }
+>>>>>>> 1bebcb1 (v1.2)
         if (n.trait === 'slow' && k > 25) { // learner: the L board
           const lx = sx + n.w * 0.25 * k;
           const ly = PY(hgt * 0.55, dN);
@@ -1525,7 +1581,7 @@
         ctx.fillText((Math.max(0, L.length - p.y) / 1000).toFixed(2) + ' km', -68, -20);
         ctx.font = '700 14px ' + FONT;
         ctx.fillStyle = '#9ec9dc';
-        ctx.fillText('by ' + World.fmtClock(st.deadline), -68, 1);
+        ctx.fillText('by ' + World.fmtClock(st.deadline + (World.T.TOD_SHIFT[st.tod] || 0)), -68, 1);
       }
       ctx.textAlign = 'right';
       ctx.fillStyle = '#ffffff';
@@ -1612,7 +1668,8 @@
       const p = st.players[0];
       const wet = st.weather === 'rain';
       const chase = camMode === 'chase';
-      fogCol = wet ? PAL.fogRain : PAL.fog;
+      tod = st.tod || 'day';
+      fogCol = tod === 'night' ? PAL.fogNight : tod === 'evening' ? PAL.fogEve : wet ? PAL.fogRain : PAL.fog;
       camX = interp.x(p, alpha);
       camY = interp.y(p, alpha) - (chase ? CHASE_BACK : 0);
       hY = H * (chase ? CHASE_HORIZON : 0.4);
@@ -1658,6 +1715,7 @@
         }
       }
       drawParticles(dt);
+      if (tod !== 'day') drawDusk();
       ctx.restore();
       if (wet) drawRain(dt);
       drawBubbles(st, dt, alpha, interp);
@@ -1700,7 +1758,12 @@
             const who = e.with === 'ped' || e.with === 'vendor' ? 'ped' : 'npc';
             const id = e.with === 'vendor' ? 0 : e.id;
             if (e.with === 'vendor') break;
+<<<<<<< HEAD
             if (e.phase === 'start') bubble(who, id, S('ped.fightStart'));
+=======
+            if (e.phase === 'start' && !e.debate) bubble(who, id, S('ped.fightStart'));
+            else if (e.phase === 'moveOn') bubble('player', 0, S('me.moveOn'));
+>>>>>>> 1bebcb1 (v1.2)
             else if (e.phase === 'sorry') { bubble('player', 0, S('me.sorry')); bubble(who, id, S('ped.fightCalm'), 0.5); }
             else if (e.phase === 'argue') { bubble('player', 0, S('me.argue')); bubble(who, id, S('ped.fightAngry'), 0.4); }
             else if (e.phase === 'shouted') bubble(who, id, S('ped.fightEnd'));

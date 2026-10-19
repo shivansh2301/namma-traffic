@@ -5,6 +5,12 @@ and why. Newest first.
 
 | # | Date | Decision | Why |
 |---|---|---|---|
+| 30 | 2026-10-19 | Start flow is title → mode → level list → ride: the briefing screen is gone, picking a level starts it. Title shows the controls large; settings fold behind a ⚙ button. Default view is back to **from the seat** (`viewV: 3` migrates once) | "Too many clicks to start" (user request) |
+| 29 | 2026-10-19 | Runs are sometimes **evening or night** (20 % each, own `'tod'` stream, look only): darker sky and fog, lit windows, headlights/tail lights, our headlight pool; the on-screen clock shifts +9 h / +12 h | "Sometimes flip between evening / night" (user request); deadlines and scoring are unchanged |
+| 28 | 2026-10-19 | Tankers appear on every road (levels 1 and 4 had none); cars were already everywhere | User request |
+| 27 | 2026-10-19 | A gaali turns into a **heated debate**: HORN argues back (costly), BRAKE is the responsible way out (no karma lost); ignoring it just ends it | User request: "horn to heated debate, brake to be responsible and move on" |
+| 26 | 2026-10-19 | "Follow finger" touch steering removed; only the left handle remains | User request ("follow finger mode is so dumb") |
+| 25 | 2026-10-19 | Street life: chai/momo/biryani stalls, street dogs, missing drain slabs, sunken manholes, footpath puddles that can make you slip; gaali after repeated honks; handover scenes (security approval, aunty, kid…); NPC personalities (racers, slow L-board cars, honkers, tanker sway, Bapido and delivery riders); all dialogue in `client/lines.js` | User request; personas will keep evolving, so lines live in one data file |
 | 24 | 2026-10-19 | Busy gully stretches: random per seed in gully segments, more traffic, carts and pedestrians, announced by a toast and marked with bunting | "Increase traffic in some random gully areas" (user request); own RNG stream so existing layouts stay put |
 | 23 | 2026-10-19 | Touch steering is a visible **left handle**: a grip on a slide track bottom left that follows the thumb, with a first-run tutorial; replaces the invisible "drag anywhere low" zone and its text hint | Steering on touch was not apparent (user request); mirrors holding the real left handlebar, while the right thumb keeps BRAKE/HORN |
 | 22 | 2026-10-19 | Default road view is a **chase camera** (4.6 m behind, 2.6 m up) showing the rider; the cockpit view stays as "from the seat" | Requested: see nearby traffic more closely. Existing players are migrated once to the new default (`viewV: 2`) |
@@ -32,6 +38,6 @@ and why. Newest first.
 
 ## Open questions from SPEC §15
 1. Final title: still "Namma Commute".
-2. Touch steering: the left handle (drag, relative) is the default; "follow finger" remains in Settings. Decide after phone tests.
+2. Touch steering: the left handle (drag, relative) is the only touch mode. Tune its travel after phone tests.
 3. Karma for riding in oncoming lanes: none yet (the head-on risk is the cost).
 4. More real places: landmarks name real areas (Koramangala, ORR, Silk Board, HSR).
