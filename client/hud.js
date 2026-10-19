@@ -12,6 +12,7 @@
  */
 (function (root) {
   'use strict';
+  const PAUSE_W = 70; // px kept free at the top right for the pause button (client/index.html .hud-btn)
   const { T } = World;
   const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const H = 68;
@@ -74,7 +75,8 @@
       ctx.fillText(World.fmtClock(st.time) + ' / ' + World.fmtClock(st.deadline), 12, 17);
     }
     ctx.textAlign = 'right';
-    let right = W - 60;
+    const RW = W - PAUSE_W; // the top-right corner belongs to the pause button
+    let right = RW - 4;
     if (opts && opts.speed && !delivery) {
       ctx.fillStyle = COL.text;
       ctx.fillText(Math.round(p.v * 3.6) + ' km/h', right, 17);
@@ -84,7 +86,7 @@
     ctx.fillText('₹' + Math.max(0, Math.round(p.money)), right, 17);
 
     const n = delivery ? 3 : 2;
-    const wb = (W - 12 * (n + 1)) / n;
+    const wb = (RW - 12 * (n + 1)) / n;
     bar(ctx, 12, 32, wb, 10, p.condition / 100, p.condition < 30 ? COL.bad : COL.cond, 'YOLO');
     const kc = p.karma >= 70 ? COL.good : p.karma >= 40 ? COL.mid : COL.bad;
     const kx0 = 24 + wb;
@@ -95,7 +97,7 @@
     if (delivery) bar(ctx, 36 + 2 * wb, 32, wb, 10, p.goods / 100, p.goods < 40 ? COL.bad : p.goods < 70 ? COL.mid : '#c77dff', 'BAG');
 
     const x0 = 12;
-    const x1 = W - 12;
+    const x1 = RW - 12;
     const yb = 56;
     ctx.fillStyle = COL.track;
     ctx.fillRect(x0, yb, x1 - x0, 4);
@@ -193,5 +195,35 @@
     ctx.fill();
   }
 
-  root.GameHud = { draw, drawHandle, HEIGHT: H };
+  /** The drop: a card with the current step of the handover scene and a progress bar. */
+  function drawHandover(ctx, st, W, H) {
+    const p = st.players[0];
+    if (!(p.handT > 0)) return;
+    const o = st.orders.find((q) => q.id === p.handId);
+    const sc = o && (World.HANDOVER_SCENES[o.kind] || []).find((q) => q.id === p.handScene);
+    if (!sc) return;
+    const total = sc.steps.reduce((a, q) => a + q[1], 0);
+    const step = sc.steps[p.handStep][0];
+    const w = Math.min(W - 32, 320);
+    const x = (W - w) / 2;
+    const y = H * 0.2;
+    ctx.fillStyle = 'rgba(20,10,35,0.82)';
+    Kit.Sprites.roundRect(ctx, x, y, w, 58, 12); ctx.fill();
+    ctx.font = '800 15px ' + FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e0aaff';
+    ctx.fillText(o.kind === 'apartment' ? 'MyGaate · ' + (STEP_TITLE[step] || step) : 'At the door · ' + (STEP_TITLE[step] || step), x + 14, y + 19);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(x + 14, y + 38, w - 28, 8);
+    ctx.fillStyle = '#c77dff';
+    ctx.fillRect(x + 14, y + 38, (w - 28) * Math.min(1, 1 - p.handT / total), 8);
+  }
+  const STEP_TITLE = {
+    guard: 'security check', approvalWait: 'approval pending ⏳', lift: 'approved ✓ lift', gate: 'leave at gate', comesDown: 'coming down',
+    wrongTower: 'wrong tower!', bell: 'ding-dong', collect: 'handing over', kid: 'a kid collects', checking: 'aunty is checking',
+    change: 'finding change', dogGate: 'dog at the gate', water: 'a glass of water',
+  };
+
+  root.GameHud = { draw, drawHandle, drawHandover, HEIGHT: H };
 })(window);

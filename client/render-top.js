@@ -786,6 +786,7 @@
       drawTelegraphs(st, opts && opts.hud);
       drawSplat(dt);
       if (opts && opts.hud) GameHud.draw(ctx, st, W, { speed: true });
+      if (opts && opts.hud) GameHud.drawHandover(ctx, st, W, H);
       if (opts && opts.hud && opts.touch) GameHud.drawHandle(ctx, W, H, opts.touch, opts.touchHint, time);
     }
 

@@ -67,7 +67,7 @@
   tr:last-child td { border-top: 1px solid #3a414c; padding-top: 8px; }
   #hud { position: absolute; inset: 0; pointer-events: none; }
   #hud button { pointer-events: auto; }
-  .hud-btn { position: absolute; top: 6px; right: 8px; width: 44px; height: 44px; border-radius: 10px; border: 0; background: rgba(255,255,255,0.12); color: var(--text); font: 800 16px var(--font); cursor: pointer; }
+  .hud-btn { position: absolute; top: 6px; right: 8px; width: 58px; height: 58px; border-radius: 14px; border: 2px solid rgba(255,255,255,0.35); background: rgba(20,20,30,0.55); color: var(--text); font: 800 24px var(--font); cursor: pointer; }
   #hint {
     position: absolute; top: 76px; left: 12px; right: 12px; padding: 10px 12px; border-radius: 10px; font-size: 15px; line-height: 1.35;
     background: rgba(18,22,28,0.92); border-left: 4px solid var(--accent); opacity: 0; transform: translateY(-6px); transition: opacity 0.25s, transform 0.25s;
@@ -193,6 +193,7 @@
 <script defer src="../shared/world.js"></script>
 <script defer src="../shared/sim.js"></script>
 <script defer src="../shared/bot.js"></script>
+<script defer src="lines.js"></script>
 <script defer src="input.js"></script>
 <script defer src="hud.js"></script>
 <script defer src="render.js"></script>

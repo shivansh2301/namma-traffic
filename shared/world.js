@@ -229,11 +229,16 @@
     MANHOLE_R: 0.4,
     FOOTPATH_PUDDLES_PER_100M: 1.2,
     SLIP_MIN_SPEED: 4.5, // hitting a puddle faster than this may make you slip and fall
-    SLIP_CHANCE: 0.05, // per puddle; x2 in the rain, x2 when steering hard; skill and water help
+    SLIP_CHANCE: 0.04, // per puddle; x1.5 in the rain, x2 when steering hard; skill and water help
     MANHOLE_SLIP_CHANCE: 0.12, // wet manhole cover while steering hard
 
-    // NPC personalities
-    RACER_CHANCE: 0.14, // of bikes: 50-60 km/h, weaving, tailgating
+    // NPC personalities (docs/concepts/traffic-and-npc-life.md)
+    BIKE_TRAITS: { racer: 0.1, bapido: 0.12, piggy: 0.06, kinkit: 0.06, tomato: 0.06 }, // share of bikes; the rest are plain
+    DELIVERY_BIKE_MULT: 2, // delivery shifts: rival delivery riders twice as common
+    RIDER_V_MIN: 11, // rival delivery riders: in a hurry too
+    RIDER_V_MAX: 14,
+    RANT_RANGE: 6, // an auto this close to a Bapido bike taxi has words to say
+    RANT_COOLDOWN: 12,
     RACER_V_MIN: 14,
     RACER_V_MAX: 17,
     SLOW_CAR_CHANCE: 0.12, // of cars: a learner (L board) at walking pace
@@ -320,6 +325,8 @@
     ],
   };
   const STALL_KINDS = ['chai', 'momo', 'biryani'];
+  /** Rival quick-commerce riders (parody names); the player rides for Zebto (purple). */
+  const DELIVERY_BRANDS = ['piggy', 'kinkit', 'tomato'];
 
   /** What makes a gully busy (flavour: toast text, banner and bunting colours live in the client). */
   const BUSY_KINDS = ['school', 'market', 'temple', 'wedding', 'cricket'];
@@ -842,7 +849,7 @@
   }
 
   return {
-    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, BUSY_KINDS, HANDOVER_SCENES, STALL_KINDS, Rng,
+    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, BUSY_KINDS, HANDOVER_SCENES, STALL_KINDS, DELIVERY_BRANDS, Rng,
     level, segmentAt, surfaceAt, curveAt, levelsOf, prevInMode, pedBand, crossSection, laneCenter, oncCenter,
     jamCap, barricadeAt, laneBlocked, parseClock, fmtClock, xpForLevel, skillLevel,
     levelIds: LEVELS.map((l) => l.id),

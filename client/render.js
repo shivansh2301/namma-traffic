@@ -285,6 +285,53 @@
     if (!front) vendor();
   }
 
+  /** Brand looks for bikes with a personality (World.DELIVERY_BRANDS, Bapido, racers). */
+  const RIDER = {
+    piggy: { body: '#ef6c00', shirt: '#fb8c00', helmet: '#e65100', box: '#f57c00' },
+    kinkit: { body: '#f9a825', shirt: '#fdd835', helmet: '#f9a825', box: '#fbc02d' },
+    tomato: { body: '#c62828', shirt: '#e53935', helmet: '#b71c1c', box: '#d32f2f' },
+    bapido: { body: '#212121', shirt: '#fdd835', helmet: '#fdd835' },
+    racer: { body: '#d50000', shirt: '#212121', helmet: '#1565c0' },
+  };
+  function riderFace(g, t, front) {
+    const R = RIDER[t];
+    bikeFace(g, R.body, R.helmet, R.shirt, front);
+    if (R.box && !front) { g.fillStyle = shade(R.box, -0.3); box(g, -0.26, -0.42, 0.52, 0.44, 0.05); g.fillStyle = R.box; box(g, -0.23, -0.39, 0.46, 0.38, 0.04); }
+    if (t === 'bapido') { g.fillStyle = '#5d4037'; box(g, -0.2, -0.62, 0.4, 0.4, 0.08); g.fillStyle = '#8d5a3b'; circ(g, 0.02, -0.84, 0.12); } // the pillion
+    if (t === 'racer') { g.fillStyle = 'rgba(255,255,255,0.7)'; box(g, -0.3, 0.1, 0.6, 0.05, 0.02); }
+  }
+
+  /** Street-food stall against the wall: tarp, counter, pot or kettle, vendor. */
+  function stallFace(g, kind) {
+    shadowUnder(g, 1.6, 2.2);
+    const tarp = kind === 'chai' ? '#1565c0' : kind === 'momo' ? '#2e7d32' : '#b71c1c';
+    g.fillStyle = '#6d4c41'; box(g, -0.72, -0.7, 0.06, 1.8, 0.02); box(g, 0.66, -0.7, 0.06, 1.8, 0.02);
+    g.fillStyle = tarp; poly(g, [-0.85, -0.75, 0.85, -0.75, 0.7, -1.05, -0.7, -1.05]);
+    g.fillStyle = shade(tarp, 0.4); box(g, -0.8, -0.78, 1.6, 0.06);
+    g.fillStyle = '#8d5a3b'; circ(g, 0, -0.38, 0.12); // vendor
+    g.fillStyle = '#eeeeee'; box(g, -0.2, -0.26, 0.4, 0.4, 0.08);
+    g.fillStyle = '#795548'; box(g, -0.75, 0.15, 1.5, 0.9, 0.04); // counter
+    g.fillStyle = '#a1887f'; box(g, -0.75, 0.12, 1.5, 0.08);
+    if (kind === 'chai') { g.fillStyle = '#b0bec5'; box(g, -0.5, -0.12, 0.3, 0.26, 0.06); g.fillStyle = '#fff8e1'; for (let i = 0; i < 4; i++) box(g, 0.1 + i * 0.12, 0.0, 0.07, 0.12, 0.02); }
+    else if (kind === 'momo') { g.fillStyle = '#cfd8dc'; for (let i = 0; i < 3; i++) box(g, -0.55, 0.0 - i * 0.13, 0.42, 0.12, 0.03); g.fillStyle = '#fafafa'; circ(g, 0.25, 0.04, 0.06); circ(g, 0.4, 0.04, 0.06); }
+    else { g.fillStyle = '#bf6c2c'; ell(g, -0.25, 0.0, 0.32, 0.18); g.fillStyle = '#c62828'; box(g, -0.5, -0.2, 0.5, 0.08, 0.03); }
+    g.fillStyle = 'rgba(255,255,255,0.35)'; circ(g, -0.35, -0.5, 0.08); circ(g, -0.28, -0.62, 0.06);
+  }
+
+  /** Street dog: curled up asleep, or running (two frames), seen from the side. */
+  function dogSide(g, v, frame) {
+    const col = ['#c8a165', '#3e2f25', '#e8dcc8'][v];
+    const dk = shade(col, -0.35);
+    shadowUnder(g, 0.9, 0.7);
+    if (frame === 2) { g.fillStyle = col; ell(g, 0, 0.18, 0.4, 0.15); g.fillStyle = dk; ell(g, -0.3, 0.12, 0.14, 0.1); ell(g, 0.36, 0.2, 0.12, 0.04); return; }
+    const sw = frame ? 0.08 : -0.08;
+    g.fillStyle = dk;
+    for (const x of [-0.25, 0.25]) { box(g, x - 0.04 + sw, 0.05, 0.07, 0.3, 0.02); box(g, x - 0.04 - sw, 0.05, 0.07, 0.3, 0.02); }
+    g.fillStyle = col; ell(g, 0, 0.0, 0.33, 0.13);
+    ell(g, -0.38, -0.12, 0.13, 0.1); g.fillStyle = dk; poly(g, [-0.42, -0.2, -0.36, -0.3, -0.32, -0.18]);
+    g.strokeStyle = col; g.lineWidth = 0.05; g.beginPath(); g.moveTo(0.3, -0.05); g.quadraticCurveTo(0.45, -0.2, 0.42, -0.28); g.stroke();
+  }
+
   /** You, seen from behind: Yolo e-scooter, rider, and a delivery box in delivery mode. */
   function meRear(g, jacket, delivery) {
     shadowUnder(g, 0.9, 1.65);
@@ -310,6 +357,9 @@
   }
 
   function registerSprites(sp) {
+    for (const t in RIDER) { sp.register('rider.r.' + t, 0.8, 1.55, (g) => riderFace(g, t, false)); sp.register('rider.f.' + t, 0.8, 1.55, (g) => riderFace(g, t, true)); }
+    for (const k of World.STALL_KINDS) sp.register('stall.' + k, 1.7, 2.3, (g) => stallFace(g, k));
+    for (let v = 0; v < 3; v++) for (let f = 0; f < 3; f++) sp.register('dog.' + v + '.' + f, 0.9, 0.7, (g) => dogSide(g, v, f));
     sp.register('me.c', 0.95, 1.65, (g) => meRear(g, '#e8590c', false));
     sp.register('me.d', 0.95, 1.65, (g) => meRear(g, '#5a189a', true));
     for (let v = 0; v < 2; v++) {
@@ -611,6 +661,18 @@
         flatBlob(h, h.r, PAL.potholeRim);
         flatBlob(h, h.r * 0.8, PAL.pothole);
       }
+      // missing drain slabs on footpaths, sunken manhole covers in the road
+      for (const d of st.drains || []) {
+        if (d.y - camY < -1 || d.y - camY > 70) continue;
+        gRect(d.x - d.w / 2 - 0.08, d.x + d.w / 2 + 0.08, d.y - d.l / 2 - 0.08, d.y + d.l / 2 + 0.08, '#7d7568');
+        gRect(d.x - d.w / 2, d.x + d.w / 2, d.y - d.l / 2, d.y + d.l / 2, '#0d0b09');
+      }
+      for (const m of st.manholes || []) {
+        if (m.y - camY < -1 || m.y - camY > 70) continue;
+        flatEllipse(m.x, m.y, m.r + 0.06, m.r + 0.06, '#2a2a2a');
+        flatEllipse(m.x, m.y, m.r, m.r, wet ? '#5b6168' : '#6d6a64');
+        gRect(m.x - m.r * 0.7, m.x + m.r * 0.7, m.y - 0.03, m.y + 0.03, '#3d3b38');
+      }
       // delivery drop zones: pull over to the kerb and stop inside
       const next = Sim.nextOrder(st);
       for (const o of st.orders || []) {
@@ -829,7 +891,7 @@
       it.d = d; it.kind = kind; it.ref = ref; it.a = a; it.b = b;
     }
     const byDepth = (p, q) => q.d - p.d;
-    const K_VEH = 1, K_PED = 2, K_COW = 3, K_TREE = 4, K_POLE = 5, K_BAR = 6, K_SHRUB = 7, K_SHELTER = 8, K_PIN = 9, K_GATE = 10, K_ME = 11, K_BUNT = 12;
+    const K_VEH = 1, K_PED = 2, K_COW = 3, K_TREE = 4, K_POLE = 5, K_BAR = 6, K_SHRUB = 7, K_SHELTER = 8, K_PIN = 9, K_GATE = 10, K_ME = 11, K_BUNT = 12, K_STALL = 13, K_DOG = 14;
 
     function collect(st, L, alpha, interp) {
       nItems = 0;
@@ -879,6 +941,8 @@
         if (o.status === 'pending' && o.y - camY > 1 && o.y - camY < FAR) addItem(o.y - camY, K_PIN, o, o === next ? 1 : 0, 0);
       }
       if (L.destination && L.length - camY > -2 && L.length - camY < FAR) addItem(L.length - camY, K_GATE, L, 0, 0);
+      for (const k of st.stalls || []) if (k.y - camY > NEAR && k.y - camY < FAR) addItem(k.y - camY, K_STALL, k, k.x, k.y);
+      for (const d of st.dogs || []) if (d.y - camY > NEAR && d.y - camY < 80) addItem(interp.y(d, alpha) - camY, K_DOG, d, interp.x(d, alpha), interp.y(d, alpha));
       for (const b of st.busy || []) {
         for (let y = b.y0, i = 0; y <= b.y1; y += BUNT_EVERY, i++) {
           if (y - camY > 1 && y - camY < FAR) addItem(y - camY, K_BUNT, b, y, i);
@@ -951,10 +1015,17 @@
         let key;
         if (n.kind === 'car') key = (n.cab ? 'cab.' : 'car.') + (front ? 'f' : 'r') + (n.cab ? '' : '.' + n.variant);
         else if (n.kind === 'auto') key = 'auto.' + (front ? 'f' : n.fare ? 'rp' : 'r') + '.' + n.variant;
+        else if (n.kind === 'bike' && n.trait && RIDER[n.trait]) key = 'rider.' + (front ? 'f.' : 'r.') + n.trait;
         else key = n.kind + '.' + (front ? 'f' : 'r') + '.' + n.variant;
         const lean = n.kind === 'bike' ? Math.max(-0.25, Math.min(0.25, (n.vx || 0) * 0.08)) * (front ? -1 : 1) : 0;
         if (lean) { ctx.save(); ctx.translate(sx, PY(0, dN)); ctx.rotate(lean); sprites.draw(ctx, key, 0, -hgt * k / 2, 0, k); ctx.restore(); }
         else sprites.draw(ctx, key, sx, PY(hgt / 2, dN), 0, k);
+        if (n.trait === 'slow' && k > 25) { // learner: the L board
+          const lx = sx + n.w * 0.25 * k;
+          const ly = PY(hgt * 0.55, dN);
+          ctx.fillStyle = '#ffffff'; ctx.fillRect(lx - 0.16 * k, ly - 0.16 * k, 0.32 * k, 0.32 * k);
+          ctx.fillStyle = '#d50000'; ctx.font = '900 ' + Math.max(8, 0.28 * k).toFixed(0) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('L', lx, ly + 0.01 * k);
+        }
         if (n.parked && Math.floor(time * 2.5) % 2 === 0) { // hazard lights
           ctx.fillStyle = 'rgba(255,170,30,0.9)';
           const ly = PY(hgt * 0.48, dN);
@@ -1121,6 +1192,15 @@
       ctx.globalAlpha = 1;
     }
 
+    function drawStall(k) {
+      const r = billboard('stall.' + k.kind, k.x, k.y, 1.7, 2.3);
+      if (r && r.k > 30) { // the board over the tarp
+        ctx.font = '800 ' + Math.min(22, 0.28 * r.k).toFixed(0) + 'px ' + FONT;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffffff';
+        ctx.fillText(k.kind === 'chai' ? 'CHAI' : k.kind === 'momo' ? 'MOMOS' : 'BIRYANI', r.sx, r.sy + 0.12 * r.k);
+      }
+    }
+
     /** Bunting strung house to house across a busy gully; the first string carries a cloth banner. */
     function drawBunting(L, b, y, banner) {
       const d = y - camY;
@@ -1262,7 +1342,7 @@
       bubbles.push({ kind, id, text, t: 2.0 + (delay || 0), delay: delay || 0 });
     }
     function findRef(st, kind, id) {
-      const arr = kind === 'ped' ? st.peds : kind === 'player' ? st.players : st.npcs;
+      const arr = kind === 'ped' ? st.peds : kind === 'player' ? st.players : kind === 'dog' ? st.dogs || [] : st.npcs;
       for (let i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i];
       return null;
     }
@@ -1572,6 +1652,8 @@
           case K_GATE: drawTechGate(L); break;
           case K_ME: drawMe(it.ref, it.a, it.b, L); break;
           case K_BUNT: drawBunting(L, it.ref, it.a, it.b === 0); break;
+          case K_STALL: drawStall(it.ref); break;
+          case K_DOG: billboard('dog.' + it.ref.variant + '.' + (it.ref.mode === 'sleep' ? 2 : Math.floor(time * 8) & 1), it.a, it.b, 0.9, 0.7, it.ref.face > 0); break;
           default: break;
         }
       }
@@ -1582,6 +1664,7 @@
       drawSplat(dt);
       if (chase) drawDash(st, opts && opts.touch);
       else drawCockpit(st, opts && opts.brake);
+      if (opts && opts.hud) GameHud.drawHandover(ctx, st, W, H);
       if (opts && opts.touch && opts.hud) GameHud.drawHandle(ctx, W, H, opts.touch, opts.touchHint, time, chase ? 0 : 150);
       if (opts && opts.hud) {
         drawTelegraphs(st);
@@ -1597,39 +1680,65 @@
             if (e.player && camMode === 'cockpit') addSplat(Math.round(4 + (e.size || 0.5) * 6));
             else burst(e.x, e.y, 6 + Math.round((e.size || 0.5) * 12), 0, 3, 0.6, 0.12, 2.5);
             break;
-          case 'pedSplashed': bubble('ped', e.pedId, e.byPlayer ? 'Ayyo! My clothes!' : 'Ayyo!'); break;
-          case 'pothole': trauma = Math.min(1, trauma + 0.45 + e.speed / 25); if (e.hidden) bubble('player', 0, 'Hidden pothole!'); break;
+          case 'pedSplashed': bubble('ped', e.pedId, S(e.byPlayer ? 'ped.splashed' : 'ped.splashedOther')); break;
+          case 'pothole': trauma = Math.min(1, trauma + 0.45 + e.speed / 25); if (e.hidden) bubble('player', 0, S('me.hiddenPothole')); break;
           case 'bump': trauma = Math.min(1, trauma + (e.kind === 'breaker' && e.hard ? 0.5 : e.kind === 'scrape' ? 0.1 : 0.22)); break;
-          case 'crash': trauma = 1; break;
+          case 'crash':
+            trauma = 1;
+            if (e.with === 'slip') { bubble('player', 0, S('me.slip')); burst(e.x, e.y, 14, 0, 3, 0.6, 0.12, 2.5); }
+            break;
           case 'screenSplash': addSplat(14); break;
           case 'horn': hornFlash = 1; break;
-          case 'honkNpc': if (e.atPlayer) bubble('npc', e.id, 'Swalpa adjust maadi!'); break;
-          case 'npcYield': if (Math.random() < 0.5) bubble('npc', e.id, 'Sari, sari'); break;
+          case 'honkNpc':
+            if (e.angry) break;
+            if (e.trait === 'honker') { if (Math.random() < 0.5) bubble('npc', e.id, S('npc.honker')); }
+            else if (e.atPlayer) bubble('npc', e.id, S('npc.honkAtYou'));
+            else if (isBehindLearner(st, e.id) && Math.random() < 0.4) bubble('npc', e.id, S('npc.behindLearner'));
+            break;
+          case 'npcYield': if (Math.random() < 0.5) bubble('npc', e.id, S('npc.yield')); break;
           case 'fight': {
-            const who = e.with === 'ped' ? 'ped' : 'npc';
-            if (e.phase === 'start') bubble(who, e.id, pick(['Ey! Kannu kaanalva?', 'Enu guru idu?!', 'Nodkondu hogi!']));
-            else if (e.phase === 'sorry') { bubble('player', 0, 'Sorry, sorry!'); bubble(who, e.id, 'Hmm. Hushaaru!', 0.5); }
-            else if (e.phase === 'argue') { bubble('player', 0, pick(['You started it!', 'Neeve nodi!', 'Side kodi!'])); bubble(who, e.id, pick(['Yen guru?!', 'Police kareetini!', 'Nimdu tappu!']), 0.4); }
-            else if (e.phase === 'shouted') bubble(who, e.id, 'Hogi, hogi...');
+            const who = e.with === 'ped' || e.with === 'vendor' ? 'ped' : 'npc';
+            const id = e.with === 'vendor' ? 0 : e.id;
+            if (e.with === 'vendor') break;
+            if (e.phase === 'start') bubble(who, id, S('ped.fightStart'));
+            else if (e.phase === 'sorry') { bubble('player', 0, S('me.sorry')); bubble(who, id, S('ped.fightCalm'), 0.5); }
+            else if (e.phase === 'argue') { bubble('player', 0, S('me.argue')); bubble(who, id, S('ped.fightAngry'), 0.4); }
+            else if (e.phase === 'shouted') bubble(who, id, S('ped.fightEnd'));
             break;
           }
           case 'npcArgue':
-            bubble('npc', e.a, e.kind === 'wrongSide' ? pick(['Wrong side, guru!', 'Ulta yaake?']) : pick(['Ey! Side kodi!', 'Indicator haaki!']));
-            bubble('npc', e.b, pick(['Swalpa adjust maadi!', 'Sari, hogi!', 'Hurry ide!']), 0.6);
+            bubble('npc', e.a, S(e.kind === 'wrongSide' ? 'npc.wrongSideA' : 'npc.cutInA'));
+            bubble('npc', e.b, S('npc.cutInB'), 0.6);
             break;
-          case 'hail': bubble('ped', e.pedId, pick(['Auto!', 'Auto! Barthira?'])); break;
-          case 'pickup': bubble('npc', e.id, pick(['Banni, kootkoli', 'Meter haakteeni'])); break;
-          case 'board': bubble('npc', e.id, 'Majestic! Majestic!'); break;
-          case 'chat': bubble('ped', e.a, pick(['Oota aayta?', 'Chennagideera?'])); bubble('ped', e.b, pick(['Aaytu! Neevu?', 'Hoon, chennagideeni']), 0.8); break;
-          case 'handover': bubble('player', 0, e.kind === 'apartment' ? pick(['Security: Entry register, sir!', 'Security: Flat number?', 'Lift is slow, sir...']) : pick(['Aunty: Coming, coming!', 'Customer: One minute!'])); break;
-          case 'delivered': bubble('player', 0, e.rating >= 5 ? pick(['Super fast! Thank you!', 'Thanks, anna!']) : e.goods < 60 ? 'Customer: The eggs are broken!' : e.late > 0 ? 'Customer: So late!' : 'Customer: Okay, thanks.'); break;
-          case 'missed': bubble('player', 0, 'Phone: "Where are you?!" Order cancelled.'); break;
-          case 'goodDeed': if (e.kind === 'giveWay') bubble('ped', e.id, pick(['Thank you, anna!', 'Dhanyavaada!'])); else if (e.kind === 'letIn') bubble('npc', e.id, 'Thanks, guru!'); break;
+          case 'hail': bubble('ped', e.pedId, S('ped.booking')); break;
+          case 'pickup': bubble('npc', e.id, S('npc.pickup')); break;
+          case 'board': bubble('npc', e.id, S('npc.busBoard')); break;
+          case 'chat': bubble('ped', e.a, S('ped.chatA')); bubble('ped', e.b, S('ped.chatB'), 0.8); break;
+          case 'handStep': bubble('player', 0, S('hand.' + e.step)); break;
+          case 'delivered': bubble('player', 0, S(e.rating >= 5 ? 'deliver.happy' : e.goods < 60 ? 'deliver.broken' : e.late > 0 ? 'deliver.late' : 'deliver.ok')); break;
+          case 'missed': bubble('player', 0, S('deliver.missed')); break;
+          case 'goodDeed': if (e.kind === 'giveWay') bubble('ped', e.id, S('ped.thanks')); else if (e.kind === 'letIn') bubble('npc', e.id, S('npc.thanksLetIn')); break;
+          case 'pedNudge': bubble('ped', e.pedId, S('ped.nudge')); break;
+          case 'gaali':
+            if (e.who === 'ped') bubble('ped', e.id, e.line || S('gaali.ped'));
+            else if (e.who === 'guard' || e.who === 'customer') bubble('player', 0, e.line || S('gaali.' + e.who));
+            else bubble('npc', e.id, e.line || S('gaali.driver'));
+            break;
+          case 'bark': if (Math.random() < 0.5) bubble('dog', e.id, S('dog.bark')); break;
+          case 'dogScared': bubble('dog', e.id, S('dog.scared')); break;
+          case 'dogBite': trauma = Math.min(1, trauma + 0.6); bubble('player', 0, S('me.bitten')); break;
+          case 'bikePass': bubble('npc', e.id, S('rider.' + e.trait)); break;
+          case 'autoRant': bubble('npc', e.id, S('npc.autoVsBapido')); bubble('npc', e.at, S('npc.bapidoBack'), 0.9); break;
+          case 'npcTurnOff': burst(e.x, e.y, 10, 1, 1.5, 0.8, 0.18, 1); bubble('npc', e.id, S('npc.turnOff')); break;
           default: break;
         }
       }
     }
-    function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+    const S = (key, vars) => GameLines.say(key, vars);
+    function isBehindLearner(st, id) {
+      const n = st.npcs.find((q) => q.id === id);
+      return !!n && st.npcs.some((q) => q.trait === 'slow' && q.dir === n.dir && Math.abs(q.x - n.x) < 1.5 && (q.y - n.y) * n.dir > 0 && (q.y - n.y) * n.dir < 12);
+    }
     function mmss(sec) { const s = Math.floor(sec); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
 
     function reset() {
