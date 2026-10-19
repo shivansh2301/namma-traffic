@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#14171c">
+<meta name="description" content="Ride a Yolo to the office through Bengaluru traffic: potholes, cows, wrong-side riders, karma and tips.">
+<title>Namma Commute</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root {
+    --bg: #101317; --panel: rgba(12, 14, 19, 0.86); --text: #f5f1e8; --dim: #b8b2a3;
+    --accent: #ffb703; --accent-text: #1b1b1b; --btn2: #2b313b; --cyan: #22e5ff;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+  body {
+    background:
+      repeating-linear-gradient(135deg, rgba(255,183,3,0.05) 0 18px, transparent 18px 36px),
+      linear-gradient(#14171c, #0d0f13);
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none; touch-action: manipulation; overscroll-behavior: none;
+  }
+  [hidden] { display: none !important; }
+  #stage { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; }
+  /* Portrait column; on landscape/desktop the aspect is capped at 3:4 with decorative side bars (SPEC §2). */
+  #column { position: relative; height: 100%; width: min(100vw, 75vh); overflow: hidden; box-shadow: 0 0 40px rgba(0,0,0,0.6); }
+  @supports (height: 100dvh) { #column { width: min(100vw, 75dvh); } }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .screen {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); text-align: center; overflow-y: auto;
+    background: linear-gradient(rgba(10,12,16,0.55), rgba(10,12,16,0.9));
+  }
+  h1 { font-size: clamp(34px, 9vw, 52px); margin: 0; letter-spacing: 0.5px; line-height: 1.05; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 26px; margin: 0; }
+  p { margin: 0; font-size: 16px; line-height: 1.45; max-width: 34ch; }
+  .small { font-size: 14px; color: var(--dim); }
+  .btn {
+    min-height: 50px; min-width: 200px; padding: 12px 22px; font: 700 18px var(--font); border: 0; border-radius: 14px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  .btn.secondary { background: var(--btn2); color: var(--text); }
+  .btn:focus-visible, .level:focus-visible, .toggle:focus-visible, .hud-btn:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .row .btn { min-width: 110px; }
+  .settings { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .toggle { font: 600 15px var(--font); padding: 10px 14px; border-radius: 10px; border: 1px solid #3a414c; background: transparent; color: var(--text); cursor: pointer; min-height: 44px; }
+  .toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .list { display: flex; flex-direction: column; gap: 10px; width: min(100%, 420px); }
+  .level { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; border: 0; background: #1f242c; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .level:disabled { opacity: 0.45; cursor: default; }
+  .lv-num { font: 800 24px var(--font); color: var(--accent); width: 28px; text-align: center; }
+  .lv-body { display: flex; flex-direction: column; flex: 1; gap: 2px; }
+  .lv-name { font-weight: 700; font-size: 17px; }
+  .lv-meta { font-size: 14px; color: var(--dim); }
+  .lv-stars { font-size: 18px; color: var(--accent); white-space: nowrap; }
+  .card { background: #1a1f26; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; align-items: center; width: min(100%, 420px); }
+  .stars { font-size: 44px; color: var(--accent); letter-spacing: 6px; }
+  table { border-collapse: collapse; font-size: 16px; min-width: 240px; }
+  td { padding: 4px 8px; text-align: left; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  tr:last-child td { border-top: 1px solid #3a414c; padding-top: 8px; }
+  #hud { position: absolute; inset: 0; pointer-events: none; }
+  #hud button { pointer-events: auto; }
+  .hud-btn { position: absolute; top: 6px; right: 8px; width: 44px; height: 44px; border-radius: 10px; border: 0; background: rgba(255,255,255,0.12); color: var(--text); font: 800 16px var(--font); cursor: pointer; }
+  #hint {
+    position: absolute; top: 76px; left: 12px; right: 12px; padding: 10px 12px; border-radius: 10px; font-size: 15px; line-height: 1.35;
+    background: rgba(18,22,28,0.92); border-left: 4px solid var(--accent); opacity: 0; transform: translateY(-6px); transition: opacity 0.25s, transform 0.25s;
+  }
+  #hint.show { opacity: 1; transform: none; }
+  .tbtn { position: absolute; border-radius: 50%; border: 3px solid rgba(255,255,255,0.35); color: #fff; font: 800 15px var(--font); touch-action: none; }
+  #btn-brake { width: 96px; height: 96px; right: 16px; bottom: calc(22px + env(safe-area-inset-bottom)); background: rgba(220,60,50,0.55); }
+  #btn-horn { width: 70px; height: 70px; right: 30px; bottom: calc(132px + env(safe-area-inset-bottom)); background: rgba(255,183,3,0.5); color: #1b1b1b; }
+  .tbtn.down { transform: scale(0.93); filter: brightness(1.3); }
+  #drag-hint { position: absolute; left: 16px; right: 130px; bottom: calc(40px + env(safe-area-inset-bottom)); font-size: 15px; color: #fff; text-shadow: 0 1px 3px #000; }
+  #toast {
+    position: absolute; left: 12px; right: 12px; top: 112px; padding: 10px 12px; border-radius: 10px; font: 600 15px var(--font); line-height: 1.35;
+    background: rgba(18,22,28,0.92); border-left: 4px solid var(--cyan); opacity: 0; transform: translateY(-6px); transition: opacity 0.2s, transform 0.2s;
+  }
+  #toast.show { opacity: 1; transform: none; }
+  #toast.good { border-left-color: #62d26f; background: rgba(20,48,28,0.94); }
+  #toast.bad { border-left-color: #ff6a5c; background: rgba(60,20,18,0.94); }
+  #toast.deed { border-left-color: #ffd166; }
+  #fight {
+    position: absolute; left: 12px; right: 12px; top: 42%; padding: 14px; border-radius: 14px; text-align: center;
+    background: rgba(70,18,14,0.92); border: 2px solid #ff6a5c; font: 600 15px var(--font); line-height: 1.4;
+  }
+  #fight strong { display: block; font-size: 19px; margin-bottom: 4px; }
+  #res-xp { font-size: 15px; font-weight: 700; }
+  #res-xp.good { color: #62d26f; } #res-xp.bad { color: #ff6a5c; }
+  #rider { color: var(--dim); font-size: 15px; }
+  .orders { text-align: left; margin: 0; padding-left: 22px; font-size: 15px; line-height: 1.5; }
+  .orders .due { color: #e0aaff; font-weight: 700; }
+  .mode-card .lv-num { font-size: 26px; width: 36px; }
+  #debug { position: absolute; left: 8px; bottom: 8px; font: 12px ui-monospace, monospace; color: #9f9; background: rgba(0,0,0,0.5); padding: 2px 6px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="column">
+    <canvas id="game" aria-label="Game view"></canvas>
+    <div id="hud" hidden>
+      <button id="btn-pause" class="hud-btn" aria-label="Pause">❚❚</button>
+      <div id="hint" role="status" aria-live="polite"></div>
+      <div id="toast" role="status" aria-live="polite"></div>
+      <div id="fight" hidden role="alert"><strong id="fight-who">Argument!</strong>Hold BRAKE to apologise (−2 karma) · HORN to argue back (costly)</div>
+      <div id="touch" hidden>
+        <div id="drag-hint" hidden>Drag left or right on the lower screen to steer</div>
+        <button id="btn-horn" class="tbtn" aria-label="Horn">HORN</button>
+        <button id="btn-brake" class="tbtn" aria-label="Brake">BRAKE</button>
+      </div>
+    </div>
+
+    <section id="scr-title" class="screen">
+      <h1>Namma<br><span>Commute</span></h1>
+      <p>Ride your Yolo through Bengaluru: to the office by 10:00, or groceries to the door in 10 minutes. Give way, stay calm: good karma brings tips and treats.</p>
+      <p id="rider"></p>
+      <button class="btn" id="b-play" data-focus>Play</button>
+      <div class="settings"></div>
+      <p class="small" id="title-controls">Keyboard: ← → steer · ↓ brake · Space horn · P pause</p>
+    </section>
+
+    <section id="scr-mode" class="screen" hidden>
+      <h2>Choose your ride</h2>
+      <div class="list">
+        <button class="level mode-card" id="b-mode-commute" data-focus>
+          <span class="lv-num">🏢</span>
+          <span class="lv-body"><span class="lv-name">Office commute</span><span class="lv-meta">Reach the tech park gate before 10:00. Potholes, jams, Silk Board.</span></span>
+        </button>
+        <button class="level mode-card" id="b-mode-delivery">
+          <span class="lv-num">🛍️</span>
+          <span class="lv-body"><span class="lv-name">Grocery delivery</span><span class="lv-meta">10-minute orders to apartment towers and houses deep in the gullies.</span></span>
+        </button>
+      </div>
+      <button class="btn secondary" id="b-mode-back">Back</button>
+    </section>
+
+    <section id="scr-levels" class="screen" hidden>
+      <h2 id="levels-title">Choose your commute</h2>
+      <div id="level-list" class="list"></div>
+      <button class="btn secondary" id="b-levels-back">Back</button>
+    </section>
+
+    <section id="scr-brief" class="screen" hidden>
+      <div class="card">
+        <h2 id="brief-name"></h2>
+        <p id="brief-meta" class="small"></p>
+        <p id="brief-blurb"></p>
+        <ol id="brief-orders" class="orders" hidden></ol>
+        <p id="brief-best" class="small"></p>
+        <p id="brief-controls" class="small"></p>
+      </div>
+      <button class="btn" id="b-ride" data-focus>Ride</button>
+      <button class="btn secondary" id="b-brief-back">Back</button>
+    </section>
+
+    <section id="scr-pause" class="screen" hidden>
+      <h2>Paused</h2>
+      <button class="btn" id="b-resume" data-focus>Resume</button>
+      <button class="btn secondary" id="b-restart">Restart</button>
+      <button class="btn secondary" id="b-quit">Quit</button>
+      <div class="settings"></div>
+      <p class="small" id="pause-seed"></p>
+    </section>
+
+    <section id="scr-result" class="screen" hidden>
+      <h2 id="res-title"></h2>
+      <div id="res-stars" class="stars"></div>
+      <p id="res-summary"></p>
+      <p id="res-xp"></p>
+      <table id="res-table"></table>
+      <div class="row">
+        <button class="btn" id="b-next" data-focus>Next</button>
+        <button class="btn secondary" id="b-retry">Retry</button>
+        <button class="btn secondary" id="b-res-levels">Levels</button>
+      </div>
+    </section>
+    <div id="debug" hidden></div>
+  </div>
+</div>
+<script defer src="../kit/rng/rng.js"></script>
+<script defer src="../kit/fixed-step/fixed-step.js"></script>
+<script defer src="../kit/camera/camera.js"></script>
+<script defer src="../kit/input/input.js"></script>
+<script defer src="../kit/synth/synth.js"></script>
+<script defer src="../kit/sprites/sprites.js"></script>
+<script defer src="../kit/particles/particles.js"></script>
+<script defer src="../kit/storage/storage.js"></script>
+<script defer src="../kit/pwa/register.js"></script>
+<script defer src="../shared/world.js"></script>
+<script defer src="../shared/sim.js"></script>
+<script defer src="../shared/bot.js"></script>
+<script defer src="input.js"></script>
+<script defer src="hud.js"></script>
+<script defer src="render.js"></script>
+<script defer src="render-top.js"></script>
+<script defer src="audio.js"></script>
+<script defer src="main.js"></script>
+</body>
+</html>

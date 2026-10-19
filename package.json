@@ -1,0 +1,13 @@
+{
+  "name": "namma-commute",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ride a scooter to the office through Bengaluru traffic. Browser game, no build step.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000",
+    "calibrate": "node tools/calibrate.js"
+  },
+  "engines": { "node": ">=20" }
+}
