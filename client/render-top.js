@@ -1,6 +1,6 @@
 /*
  * client/render-top.js: the top-down "map view" (the original v1 renderer).
- * The default view is first person (render.js); this one is kept as an
+ * The default view is the road view (render.js); this one is kept as an
  * option (?view=top or the View setting) and for debugging traffic. Bends
  * are not drawn here: it shows the road straightened out, like a route map.
  *
@@ -444,11 +444,21 @@
       for (const o of st.orders || []) {
         if (o.status !== 'pending' || o.y < yb || o.y > yt) continue;
         ctx.globalAlpha = o === next ? 0.4 + 0.15 * Math.sin(time * 5) : 0.2;
-        rectW(-0.3, T.DROP_MAX_X, o.y - T.DROP_ZONE / 2, o.y + T.DROP_ZONE / 2, '#7b2cbf');
+        rectW(-0.3, o.y - T.DROP_ZONE / 2, T.DROP_MAX_X, o.y + T.DROP_ZONE / 2, '#7b2cbf');
         ctx.globalAlpha = 1;
         const s = World.segmentAt(L, o.y);
         circW(s.xs.wallL + 0.6, o.y, 0.55, '#7b2cbf');
         circW(s.xs.wallL + 0.6, o.y, 0.25, '#ffffff');
+      }
+      for (const b of st.busy || []) { // busy gully: a warm wash and bunting lines
+        if (b.y1 < yb || b.y0 > yt) continue;
+        const s = World.segmentAt(L, b.y0);
+        ctx.globalAlpha = 0.12;
+        rectW(s.xs.wallL, b.y0, s.xs.wallR, b.y1, '#ff9800');
+        ctx.globalAlpha = 1;
+        for (let y = b.y0; y <= b.y1; y += 12) {
+          for (let x = s.xs.wallL + 0.3, i = 0; x < s.xs.wallR; x += 0.6, i++) circW(x, y, 0.12, i & 1 ? '#ffeb3b' : '#e91e63');
+        }
       }
       if (L.destination && L.length > yb && L.length < yt) {
         const s = World.segmentAt(L, L.length - 1);
@@ -776,6 +786,7 @@
       drawTelegraphs(st, opts && opts.hud);
       drawSplat(dt);
       if (opts && opts.hud) GameHud.draw(ctx, st, W, { speed: true });
+      if (opts && opts.hud && opts.touch) GameHud.drawHandle(ctx, W, H, opts.touch, opts.touchHint, time);
     }
 
     function onEvents(ev, st) {

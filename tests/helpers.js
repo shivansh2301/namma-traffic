@@ -24,7 +24,7 @@ function botFinish(levelId, seed) {
 }
 
 /**
- * A level-1 state stripped of traffic, pedestrians and hazards near the start,
+ * A level-1 state stripped of traffic, pedestrians, hazards and street life,
  * for rule tests. The player sits at (x, y) with speed v.
  */
 function bareState(opts) {
@@ -34,6 +34,10 @@ function bareState(opts) {
   st.peds = [];
   st.potholes = [];
   st.puddles = [];
+  st.stalls = [];
+  st.drains = [];
+  st.manholes = [];
+  st.dogs = [];
   const p = st.players[0];
   p.x = o.x;
   p.y = o.y;

@@ -1,9 +1,9 @@
 # Namma Commute
 
-Ride a Yolo through Bengaluru traffic, in first person. **Office commute:**
+Ride a Yolo through Bengaluru traffic, from just behind the scooter (or from the seat). **Office commute:**
 reach the tech park by 10:00 through potholes, cows, autos, wrong-side riders
 and the Silk Board junction. **Grocery delivery:** 10-minute orders to
-apartment towers and houses deep in the gullies; pull over at the purple pin. Give way and stay calm for good karma, which
+apartment towers and houses deep in the gullies, where school's out, the santhe is on or a wedding procession fills the lane; pull over at the purple pin. Give way and stay calm for good karma, which
 brings tips, water and sweets. Clash and argue, and luck turns against you.
 
 ## Play
@@ -16,7 +16,7 @@ python3 -m http.server 8000     # from this folder
 Open <http://localhost:8000/client/>.
 
 Keyboard: ← → steer (throttle is automatic) · ↓ brake · Space horn · P pause.
-Touch: drag on the lower screen to steer; BRAKE and HORN buttons bottom right.
+Touch: hold the left handle (bottom left) with your thumb and slide it to steer; BRAKE and HORN buttons bottom right.
 In an argument: hold BRAKE to apologise, HORN to argue back.
 
 ## Develop

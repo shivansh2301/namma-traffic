@@ -13,6 +13,7 @@ function atDrop(levelId, i, opts) {
   const o = Object.assign({ x: 1.0, v: 3, before: 3 }, opts);
   const st = Sim.create(levelId, 1);
   st.npcs = []; st.peds = []; st.potholes = []; st.puddles = [];
+  st.stalls = []; st.drains = []; st.manholes = []; st.dogs = [];
   for (let k = 0; k < i; k++) st.orders[k].status = 'delivered';
   const p = st.players[0];
   p.y = st.orders[i].y - o.before;
@@ -44,18 +45,62 @@ test('stopping at the kerb inside the zone hands the order over', () => {
   assert.ok(st.players[0].money >= d.tip);
 });
 
-test('apartment handovers take longer than houses', () => {
-  const house = atDrop(4, 0);
-  const apt = atDrop(4, 2);
-  const tick = (st) => { const ev = stopAndWait(st, 30 * 10); const a = ev.findIndex((e) => e.type === 'handover'); return { ev, a }; };
-  const timeOf = (st) => {
-    let t = 0, h = -1, d = -1;
-    while (t < 300 && d < 0) { st.npcs = []; st.peds = []; for (const e of Sim.step(st, BRAKE)) { if (e.type === 'handover') h = t; if (e.type === 'delivered') d = t; } t++; }
-    return (d - h) / 30;
+test('a handover plays its scene step by step and lasts exactly as long as its steps', () => {
+  const seen = { apartment: new Set(), house: new Set() };
+  for (const [i, kind] of [[0, 'house'], [2, 'apartment']]) {
+    for (let seed = 1; seed <= 12; seed++) {
+      const st = atDrop(4, i);
+      st.rng = World.Rng.hash(seed, 'scene') | 0;
+      let t = 0, h = null, d = -1, t0 = -1;
+      const steps = [];
+      while (t < 400 && d < 0) {
+        st.npcs = []; st.peds = [];
+        for (const e of Sim.step(st, BRAKE)) {
+          if (e.type === 'handover') { h = e; t0 = t; }
+          if (e.type === 'handStep') steps.push(e.step);
+          if (e.type === 'delivered') d = t;
+        }
+        t++;
+      }
+      assert.ok(h && h.kind === kind, 'handover started');
+      const sc = World.HANDOVER_SCENES[kind].find((q) => q.id === h.scene);
+      assert.deepEqual(steps, sc.steps.map((q) => q[0]));
+      const total = sc.steps.reduce((a, q) => a + q[1], 0);
+      assert.ok(Math.abs((d - t0) / 30 - total) < 0.1, kind + ' ' + sc.id + ': ' + (d - t0) / 30 + ' vs ' + total);
+      seen[kind].add(sc.id);
+    }
+  }
+  assert.ok(seen.apartment.size >= 2 && seen.house.size >= 2, 'scenes vary');
+  const mean = (kind) => { const l = World.HANDOVER_SCENES[kind]; const w = l.reduce((a, q) => a + q.w, 0); return l.reduce((a, q) => a + q.w * q.steps.reduce((b, z) => b + z[1], 0), 0) / w; };
+  assert.ok(mean('apartment') > mean('house'), 'society approval takes longer than a doorbell');
+});
+
+test('good karma brings friendlier handover scenes than bad karma', () => {
+  const count = (karma) => {
+    let friendly = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      const st = atDrop(4, 2);
+      st.rng = World.Rng.hash(seed, 'mood') | 0;
+      st.players[0].karma = karma;
+      for (let t = 0; t < 60; t++) for (const e of Sim.step(st, BRAKE)) if (e.type === 'handover') { const sc = World.HANDOVER_SCENES.apartment.find((q) => q.id === e.scene); if (sc.mood > 0) friendly++; else if (sc.mood < 0) friendly--; }
+    }
+    return friendly;
   };
-  assert.ok(Math.abs(timeOf(house) - T.HANDOVER.house) < 0.1);
-  assert.ok(Math.abs(timeOf(apt) - T.HANDOVER.apartment) < 0.1);
-  void tick;
+  assert.ok(count(95) > count(5) + 10);
+});
+
+test('honking during the handover: a gaali from security and one star less', () => {
+  const st = atDrop(4, 2);
+  const ev = [];
+  for (let t = 0; t < 30 * 12 && !ev.some((e) => e.type === 'delivered'); t++) {
+    st.npcs = []; st.peds = [];
+    const handing = st.players[0].handT > 0;
+    for (const e of Sim.step(st, { steer: 0, brake: 1, horn: handing && t % 20 === 0 ? 1 : 0 })) ev.push(e);
+  }
+  const g = ev.filter((e) => e.type === 'gaali');
+  assert.equal(g.length, 1);
+  assert.equal(g[0].who, 'guard');
+  assert.equal(ev.find((e) => e.type === 'delivered').rating, 4);
 });
 
 test('stopping mid-road (not at the kerb) does not deliver', () => {

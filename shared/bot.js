@@ -11,7 +11,9 @@
  * most clearance (time-to-collision), brake when the time-to-collision in
  * the current path is under 1.5 s. Extras: slows for speed breakers, avoids
  * visible potholes (and puddles in the rain), keeps off footpaths and
- * oncoming lanes unless that is the only way through, honks sparingly.
+ * oncoming lanes unless that is the only way through, steers round stalls,
+ * sleeping dogs and missing drain slabs, honks sparingly (never three times
+ * at the same person: that earns a gaali) and honks chasing dogs away.
  *
  * Reads the state, never writes it. Deterministic (no randomness), so
  * bot runs are reproducible. UMD like world.js.
@@ -37,18 +39,34 @@
       const dy = n.y - p.y;
       if (dy < -14 || dy > 55) continue;
       if (n.kind === 'cow') obs.push({ x: n.x, y: n.y, w: n.w, l: n.l, vx: 0, vy: Math.cos(n.h) * n.v, kind: 'cow' });
-      else obs.push({ x: n.x, y: n.y, w: n.w, l: n.l, vx: n.vx, vy: n.dir * n.v, kind: n.ws ? 'ws' : n.kind });
+      else obs.push({ x: n.x, y: n.y, w: n.w, l: n.l, vx: n.vx, vy: n.dir * n.v, kind: n.ws ? 'ws' : n.kind, honkN: n.honkN, honkTick: n.honkTick });
     }
     for (const pd of st.peds) {
       const dy = pd.y - p.y;
       if (dy < -3 || dy > 45) continue;
-      obs.push({ x: pd.x, y: pd.y, w: PED.w + 0.1, l: PED.l + 0.1, vx: pd.vx, vy: pd.vy, kind: 'ped' });
+      obs.push({ x: pd.x, y: pd.y, w: PED.w + 0.1, l: PED.l + 0.1, vx: pd.vx, vy: pd.vy, kind: 'ped', honkN: pd.honkN, honkTick: pd.honkTick });
     }
     for (const b of L.barricades) {
       if (b.y1 < p.y - 3 || b.y0 > p.y + 55) continue;
       obs.push({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, w: b.x1 - b.x0, l: b.y1 - b.y0, vx: 0, vy: 0, kind: 'barricade' });
     }
+    for (const k of st.stalls) {
+      if (k.y < p.y - 3 || k.y > p.y + 55) continue;
+      obs.push({ x: k.x, y: k.y, w: k.w, l: k.l, vx: 0, vy: 0, kind: 'stall' });
+    }
+    for (const d of st.dogs) {
+      if (d.mode !== 'sleep' || d.y < p.y - 3 || d.y > p.y + 45) continue;
+      obs.push({ x: d.x, y: d.y, w: T.DOG_W + 0.1, l: T.DOG_L + 0.1, vx: 0, vy: 0, kind: 'dog' });
+    }
+    for (const d of st.drains) { // a wall at speed; up close and slow we creep across instead (see act)
+      if (d.y < p.y - 2 || d.y > p.y + 40) continue;
+      if (d.y - p.y > 3 || p.v > T.DRAIN_SAFE_SPEED + 0.1) obs.push({ x: d.x, y: d.y, w: d.w + 0.1, l: d.l + 0.4, vx: 0, vy: 0, kind: 'drain' });
+    }
     const soft = [];
+    for (const m of st.manholes) {
+      if (m.y < p.y - 1 || m.y > p.y + 26) continue;
+      soft.push({ x: m.x, y: m.y, r: m.r, k: st.weather === 'rain' ? 2.5 : 1 });
+    }
     for (const h of st.potholes) {
       if (h.y < p.y - 1 || h.y > p.y + 32) continue;
       if (!h.hidden) soft.push({ x: h.x, y: h.y, r: h.r * 0.8, k: 6 });
@@ -235,6 +253,12 @@
       if (p.v > 3.1 && d < (p.v * p.v - 2.8 * 2.8) / (2 * decel * 0.85) + 1) out.brake = 1;
     }
 
+    // Creep across a missing drain slab we could not avoid (slow enough is safe).
+    for (const d of st.drains) {
+      const dd = d.y - d.l / 2 - (p.y + T.PLAYER_L / 2);
+      if (dd > -d.l - T.PLAYER_L && dd < 2.5 && Math.abs(d.x - p.x) < d.w / 2 + T.PLAYER_W / 2 && p.v > T.DRAIN_SAFE_SPEED - 0.5) out.brake = 1;
+    }
+
     // Deliveries: arrive slowly and stop inside the zone at the kerb.
     if (dropping) {
       const atKerb = p.x <= T.DROP_MAX_X - 0.15;
@@ -243,12 +267,23 @@
       } else if (dropD > 0 && p.v * p.v > 2 * decel * 0.55 * Math.max(0.2, dropD - 1) + 0.6) out.brake = 1;
     }
 
-    // Honk at someone in the way, within the free allowance.
+    // Honk at someone in the way, within the free allowance (and never a third time at the same one),
+    // or at a dog chasing us.
     if (mem.hornT <= 0) {
+      const win = Math.round(T.HORN_WINDOW / DT);
       let recent = 0;
-      for (const t of p.hornLog) if (t > st.tick - Math.round(T.HORN_WINDOW / DT)) recent++;
+      for (const t of p.hornLog) if (t > st.tick - win) recent++;
       if (recent < T.HORN_FREE) {
+        for (const d of st.dogs) {
+          if (d.mode === 'chase' && Math.hypot(d.x - p.x, d.y - p.y) < T.DOG_SCARE_RANGE) { out.horn = 1; mem.hornT = 1.2; break; }
+        }
+        let annoyed = false; // anyone just ahead already honked at twice: hold off
         for (const o of obs) {
+          const dy = o.y - p.y;
+          if (o.honkN != null && dy > -1 && dy < T.GAALI_RANGE + 3 && Math.abs(o.x - p.x) < 2 && st.tick - o.honkTick <= win && o.honkN >= T.GAALI_HONKS - 1) annoyed = true;
+        }
+        for (const o of obs) {
+          if (out.horn || annoyed) break;
           const dy = o.y - p.y;
           if (dy > 1 && dy < 10 && Math.abs(o.x - p.x) < 1.4 && (o.kind === 'bike' || o.kind === 'auto' || o.kind === 'ws')) {
             out.horn = 1;

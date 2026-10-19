@@ -1,7 +1,7 @@
 # AGENTS.md: start here
 
 Namma Commute: a browser game about riding a Yolo (small EV scooter) through
-Bengaluru traffic in first person, in two modes: **Office commute** (reach the
+Bengaluru traffic, seen from just behind the scooter (or from the seat), in two modes: **Office commute** (reach the
 tech park by 10:00, levels 1–3) and **Grocery delivery** (10-minute orders to
 apartment towers and gully houses, levels 4–6). Plain JavaScript, Canvas 2D, Web Audio,
 no build step, no runtime dependencies. `SPEC.md` is the original v1 spec;
@@ -14,7 +14,7 @@ python3 -m http.server 8000                  # then open http://localhost:8000/c
 node --test                                  # everything: kit units, sim rules, karma, client smoke, 20-seed bot runs (~4 min)
 node --test tests/sim.test.js tests/rules.test.js tests/karma.test.js   # fast inner loop
 node tools/calibrate.js 20                   # suggested level start times after balance changes
-node tools/snapshot.js 2 4 110 .work/a.png   # render a real frame to PNG (level seed seconds out [first|top])
+node tools/snapshot.js 2 4 110 .work/a.png   # render a real frame to PNG (level seed seconds out [chase|first|top][+touch])
 ```
 `tools/snapshot.js` needs `npm install --prefix .tools/canvas @napi-rs/canvas dejavu-fonts-ttf`.
 Handy URLs: `/client/?level=2&seed=123`, `&view=top`, `&debug`, `&sw` (enable the service worker on localhost).
@@ -31,8 +31,8 @@ docs/concepts/             design concepts (read the one for the area you touch)
   road-and-levels.md         coordinates, cross-sections, level format and authoring rules
   traffic-and-npc-life.md    vehicles, following, lane changes, courtesy, spawning, jams, NPC interactions
   karma-and-luck.md          karma, fights, good deeds, luck events, rider skill, score
-  delivery-missions.md       the two modes, delivery shifts, drop zones, ratings, areas, junctions
-  first-person-view.md       pseudo-3D projection, bends, draw order, cockpit
+  delivery-missions.md       the two modes, delivery shifts, drop zones, ratings, areas, busy gullies, junctions
+  first-person-view.md       pseudo-3D projection, chase camera vs cockpit, bends, draw order, touch left handle
   procedural-art.md          palette, silhouettes, streets, tone of voice
 kit/                       reusable, game-agnostic components, each with README + test (see kit/README.md)
 shared/world.js            tunables T, VEHICLES, PED, LEVELS, geometry helpers, skill levels (pure)
@@ -40,9 +40,9 @@ shared/sim.js              deterministic simulation: create/step/result/score (p
 shared/bot.js              scripted rider for tests, calibration and the title demo (pure)
 client/index.html          page, CSS, screens; loads every script with <script defer>
 client/main.js             loop, screens, toasts, persistence, PWA registration
-client/render.js           first-person renderer (default view)
+client/render.js           road renderer: chase camera (default) and cockpit
 client/render-top.js       top-down map renderer
-client/hud.js              shared HUD
+client/hud.js              shared HUD and the touch left-handle control
 client/input.js            keyboard + touch -> { steer, brake, horn }
 client/audio.js            synthesised sounds (EV motor, horns, splashes, luck chimes)
 client/sw.js, manifest.webmanifest, icon.svg   offline/PWA
@@ -103,6 +103,8 @@ tools/snapshot.js          headless frame rendering
 v1 spec milestones M1–M6 are built, plus: first-person view, Yolo, karma
 economy (fights, deeds, luck, skill, tips), bends and turns, NPC life, more cars
 and kerb parking, tech-park finishes, and the grocery delivery mode (gullies,
-towers, drop zones, ratings), short ~2-minute trips, parody brand names, and
-phone touch controls (drag to steer, BRAKE/HORN buttons, auto quality). All
-tests pass (`node --test`). Not yet verified on a real phone.
+towers, drop zones, ratings), short ~2-minute trips, parody brand names,
+phone touch controls (a visible left handle to steer, BRAKE/HORN buttons, auto
+quality), a chase camera behind the scooter as the default view, and random
+busy gully stretches. All tests pass (`node --test`). Not yet verified on a
+real phone.

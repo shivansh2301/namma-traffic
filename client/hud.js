@@ -102,6 +102,8 @@
     const frac = Math.max(0, Math.min(1, p.y / L.length));
     ctx.fillStyle = COL.good;
     ctx.fillRect(x0, yb, (x1 - x0) * frac, 4);
+    ctx.fillStyle = 'rgba(255,152,0,0.9)'; // busy gullies
+    for (const b of st.busy || []) ctx.fillRect(x0 + (x1 - x0) * (b.y0 / L.length), yb - 1, Math.max(3, (x1 - x0) * ((b.y1 - b.y0) / L.length)), 6);
     ctx.fillStyle = COL.text;
     for (const m of L.landmarks) ctx.fillRect(x0 + (x1 - x0) * (m.at / L.length) - 1, yb - 3, 2, 10);
     for (const o of st.orders || []) {
@@ -128,5 +130,68 @@
     }
   }
 
-  root.GameHud = { draw, HEIGHT: H };
+  /**
+   * The left handle (touch): a handlebar grip on a slide track at the bottom
+   * left. Hold it with your thumb and slide; the grip follows the thumb and
+   * the rider leans. Pulses with a label until it has been used. `lift` raises
+   * it (px), e.g. above the cockpit dashboard.
+   */
+  function drawHandle(ctx, W, H, h, hint, time, lift) {
+    const travel = h.travel;
+    const cx = travel + 48; // the track is 8 px from the left edge, half-width travel + 40
+    const cy = H - 74 - (lift || 0);
+    const v = Math.max(-1, Math.min(1, h.value));
+    ctx.fillStyle = 'rgba(10,12,16,0.5)';
+    Kit.Sprites.roundRect(ctx, cx - travel - 40, cy - 31, (travel + 40) * 2, 62, 31); ctx.fill();
+    ctx.strokeStyle = h.active ? 'rgba(34,229,255,0.8)' : 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    chevronSide(ctx, cx - travel - 26, cy, -1);
+    chevronSide(ctx, cx + travel + 26, cy, 1);
+    ctx.save();
+    ctx.translate(cx + v * travel, cy);
+    ctx.rotate(v * 0.25);
+    ctx.fillStyle = '#6b7178';
+    ctx.fillRect(28, -6, 34, 12); // the bar, heading off toward the bike
+    ctx.fillStyle = '#2b2b2b';
+    Kit.Sprites.roundRect(ctx, -38, -18, 72, 36, 14); ctx.fill();
+    ctx.fillStyle = '#3e3e3e';
+    for (let x = -28; x < 30; x += 8) ctx.fillRect(x, -16, 3, 32);
+    ctx.fillStyle = '#1fb5c4';
+    ctx.beginPath(); ctx.arc(-38, 0, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath(); ctx.arc(22, -20, 6, 0, Math.PI * 2); ctx.fill(); // the horn switch, for looks
+    ctx.restore();
+    if (!h.active) {
+      const pulse = 0.45 + 0.35 * Math.sin(time * 4);
+      ctx.strokeStyle = 'rgba(255,209,102,' + pulse.toFixed(3) + ')';
+      ctx.lineWidth = 3;
+      Kit.Sprites.roundRect(ctx, cx - 46, cy - 26, 92, 52, 18); ctx.stroke();
+      ctx.font = '800 15px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffd166';
+      if (!hint) ctx.fillText('HOLD & SLIDE', cx, cy - 46);
+      else {
+        const line = 'Hold the LEFT HANDLE, slide ◀ ▶ to steer';
+        if (ctx.measureText(line).width < W - 24) ctx.fillText(line, W / 2, cy - 46);
+        else { ctx.fillText('Hold the LEFT HANDLE,', W / 2, cy - 64); ctx.fillText('slide ◀ ▶ to steer', W / 2, cy - 45); }
+      }
+      if (hint) { // a ghost thumb shows the motion
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.beginPath(); ctx.arc(cx + Math.sin(time * 2.2) * travel, cy + 4, 15, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  function chevronSide(ctx, X, Y, dir) {
+    ctx.beginPath();
+    ctx.moveTo(X + dir * 9, Y);
+    ctx.lineTo(X - dir * 6, Y - 10);
+    ctx.lineTo(X - dir * 6, Y + 10);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  root.GameHud = { draw, drawHandle, HEIGHT: H };
 })(window);

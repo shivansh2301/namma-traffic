@@ -5,6 +5,9 @@ and why. Newest first.
 
 | # | Date | Decision | Why |
 |---|---|---|---|
+| 24 | 2026-10-19 | Busy gully stretches: random per seed in gully segments, more traffic, carts and pedestrians, announced by a toast and marked with bunting | "Increase traffic in some random gully areas" (user request); own RNG stream so existing layouts stay put |
+| 23 | 2026-10-19 | Touch steering is a visible **left handle**: a grip on a slide track bottom left that follows the thumb, with a first-run tutorial; replaces the invisible "drag anywhere low" zone and its text hint | Steering on touch was not apparent (user request); mirrors holding the real left handlebar, while the right thumb keeps BRAKE/HORN |
+| 22 | 2026-10-19 | Default road view is a **chase camera** (4.6 m behind, 2.6 m up) showing the rider; the cockpit view stays as "from the seat" | Requested: see nearby traffic more closely. Existing players are migrated once to the new default (`viewV: 2`) |
 | 21 | 2026-10-19 | All brand names replaced with parody names: Yolo (the e-scooter), Zebto (grocery delivery), Sonny World signal, BMTeaCee buses | Anonymise before publishing (user request) |
 | 20 | 2026-10-19 | Every level 40% shorter: commutes 0.72 / 0.84 / 0.87 km, delivery shifts 0.72 / 0.84 / 0.87 km; sharp junction turns keep their full length; times recalibrated | Trips felt longer than necessary (user request); runs are now about 2 minutes |
 | 19 | 2026-10-19 | Two modes: **Office commute** (levels 1–3, now ending at a tech-park gate) and **Grocery delivery** (levels 4–6, Zebto-style 10-minute orders). Levels carry `mode` and `clockRate`; unlocks are per mode | Requested. No delivery-brand logo or marks are drawn; the rider wears purple in delivery mode |
@@ -29,6 +32,6 @@ and why. Newest first.
 
 ## Open questions from SPEC §15
 1. Final title: still "Namma Commute".
-2. Touch steering: both modes are built (Settings → Touch steering: drag / follow finger). Decide after phone tests.
+2. Touch steering: the left handle (drag, relative) is the default; "follow finger" remains in Settings. Decide after phone tests.
 3. Karma for riding in oncoming lanes: none yet (the head-on risk is the cost).
 4. More real places: landmarks name real areas (Koramangala, ORR, Silk Board, HSR).

@@ -71,6 +71,14 @@
       if (b.y1 < lo || b.y0 > hi) continue;
       obPush(K_BARRICADE, null, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.x1 - b.x0, b.y1 - b.y0, 0, 0, 0);
     }
+    for (const k of st.stalls) {
+      if (k.y < lo || k.y > hi) continue;
+      obPush(K_BARRICADE, k, k.x, k.y, k.w, k.l, 0, 0, 0);
+    }
+    for (const d of st.dogs) {
+      if (d.y < lo || d.y > hi) continue;
+      obPush(K_COW, d, d.x, d.y, T.DOG_W, T.DOG_L, d.vx, d.vy, 0);
+    }
   }
 
   /**
@@ -111,7 +119,7 @@
    * line with n (overlapping its current lateral span) are ahead or behind,
    * not beside, so they never block a sideways move.
    */
-  function sweepClear(n, x, margin, alongGap) {
+  function sweepClear(n, x, margin, alongGap, ignorePlayers) {
     const need = alongGap != null ? alongGap : 0.8;
     // The margin applies on the side we move towards, not the side we leave.
     const a = x < n.x ? x - n.w / 2 - margin : n.x - n.w / 2;
@@ -120,7 +128,7 @@
     const cb = n.x + n.w / 2;
     for (let i = 0; i < obN; i++) {
       const o = OB[i];
-      if (o.ref === n) continue;
+      if (o.ref === n || (ignorePlayers && o.kind === K_PLAYER)) continue;
       if (o.x + o.w / 2 <= a || o.x - o.w / 2 >= b) continue;
       if (o.x + o.w / 2 > ca && o.x - o.w / 2 < cb) continue;
       // Ahead of us only blocks if it truly overlaps (sliding along a face is fine).
@@ -217,8 +225,10 @@
       steadyT: 0, sugarT: 0, punctureT: 0, fadeT: 0, haltT: 0,
       money: 0, xpBonus: 0, goodDeeds: 0, fights: 0,
       // deliveries: bag condition, time stopped in a drop zone, handover in progress
-      goods: 100, dropT: 0, handT: 0, handId: 0,
-      stats: { splashedPeds: 0, potholesHit: 0, crashes: 0, honks: 0, footpathSeconds: 0 },
+      goods: 100, dropT: 0, handT: 0, handId: 0, handScene: '', handStep: 0, handStepT: 0, handHonk: 0,
+      // street life: the last drain / manhole under us, gaali cooldown
+      drain: 0, manhole: 0, gaaliT: 0,
+      stats: { splashedPeds: 0, potholesHit: 0, crashes: 0, honks: 0, footpathSeconds: 0, slips: 0, dogBites: 0, gaalis: 0 },
     };
   }
 
@@ -232,6 +242,7 @@
       stop: 0, stopHard: false, hold: 0, holdOff: 0,
       cab: false, busDone: -1, leak: 0, pud: 0, warned: false, honk: 0,
       thanked: 0, pickup: 0, fare: 0, argueT: 0, boardT: 0, parked: 0, gone: 0,
+      trait: '', passed: 0, honkN: 0, honkTick: 0, gaali: 0,
     };
   }
 
@@ -361,6 +372,7 @@
       mode: 'walk', t: 0, vx: 0, vy: 0, cdir: 0, cx: 0, cmedian: false,
       dodge: 0, dodgeV: 0, splash: 0,
       thanked: 0, chatted: 0, chatWith: 0,
+      honkN: 0, honkTick: 0, gaali: 0, stall: 0,
     };
   }
 
@@ -395,6 +407,274 @@
     st.peds.sort((a, b) => a.y - b.y);
   }
 
+  // ---------------------------------------------------------------------------
+  // Busy gully stretches: school's out, market day, a wedding procession...
+  // More traffic, carts and people, and they cross more often.
+  // ---------------------------------------------------------------------------
+
+  /** A few random stretches of gully get crowded. Own RNG stream, so the rest of the layout is unchanged. */
+  function placeBusy(L, levelId, seed) {
+    const h = { rng: Rng.hash(seed, levelId, 'busy') | 0 };
+    const out = [];
+    for (const s of L.segs) {
+      if (s.area !== 'gully' || !Rng.chance(h, T.BUSY_CHANCE)) continue;
+      const len = Rng.range(h, T.BUSY_LEN_MIN, T.BUSY_LEN_MAX);
+      const lo = Math.max(s.y0 + 8, T.BUSY_MIN_Y);
+      const hi = s.y1 - 8 - len;
+      if (hi <= lo) continue;
+      const y0 = Math.round(Rng.range(h, lo, hi));
+      out.push({ y0, y1: Math.round(y0 + len), kind: Rng.pick(h, World.BUSY_KINDS), seen: 0 });
+    }
+    // The crowd itself: extra pedestrians on both edges.
+    for (const b of out) {
+      const s = World.segmentAt(L, b.y0);
+      const n = Rng.poisson(h, (T.BUSY_PEDS_PER_100M * (b.y1 - b.y0)) / 100);
+      b.peds = [];
+      for (let i = 0; i < n; i++) b.peds.push({ side: Rng.chance(h, 0.6) ? 0 : s.xs.divided ? 0 : 1, y: Rng.range(h, b.y0, b.y1), u: Rng.next(h), dir: Rng.sign(h) });
+    }
+    return out;
+  }
+
+  function busyAt(st, y) {
+    const b = st.busy;
+    for (let i = 0; i < b.length; i++) if (y >= b[i].y0 && y < b[i].y1) return b[i];
+    return null;
+  }
+
+  /** Announce each busy stretch once as the player approaches. */
+  function busyTick(st, p, ev) {
+    for (const b of st.busy) {
+      if (b.seen || p.y < b.y0 - T.BUSY_WARN || p.y > b.y1) continue;
+      b.seen = 1;
+      ev.push({ type: 'busyAhead', kind: b.kind, y0: b.y0, y1: b.y1, pid: p.id });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Street life on the edges (docs/concepts/street-life.md): chai, momo and
+  // biryani stalls with their customers, street dogs, missing drain slabs on
+  // footpaths, sunken manhole covers, puddles on the footpath. Own RNG stream.
+  // ---------------------------------------------------------------------------
+
+  /** The edges of a segment: [x0, x1] of the left edge and (undivided roads) the right edge. */
+  function edgesOf(s) {
+    const out = [{ side: 0, x0: s.xs.wallL, x1: 0, footpath: s.footpathL }];
+    if (!s.xs.divided) out.push({ side: 1, x0: s.xs.roadR, x1: s.xs.wallR, footpath: s.footpathR });
+    return out;
+  }
+
+  /** Room for something at (side, y) on an edge: clear of drops, bus stops, breakers, segment changes and parked cars. */
+  function edgeFree(st, L, s, side, y, pad) {
+    if (y < 30 || y > L.length - 10) return false;
+    if (World.segmentAt(L, y - pad - 3) !== s || World.segmentAt(L, y + pad + 3) !== s) return false;
+    if (nearBreaker(L, y, pad + 2)) return false;
+    if (side === 0 && (L.busStops.some((f) => Math.abs(f.y - y) < 10 + pad) || L.drops.some((d) => Math.abs(d.y - y) < T.DROP_ZONE / 2 + pad + 2))) return false;
+    for (const n of st.npcs) if (n.parked && (n.x < s.xs.ownR / 2 ? 0 : 1) === side && Math.abs(n.y - y) < n.l / 2 + pad + 1) return false;
+    for (const k of st.stalls) if (k.side === side && Math.abs(k.y - y) < k.l / 2 + pad + 2) return false;
+    for (const d of st.drains) if (Math.abs(d.y - y) < d.l / 2 + pad + 1) return false;
+    return true;
+  }
+
+  function placeStreet(st, L, levelId, seed) {
+    const h = { rng: Rng.hash(seed, levelId, 'street') | 0 };
+    for (const s of L.segs) {
+      const gully = s.area === 'gully';
+      for (const e of edgesOf(s)) {
+        const ew = e.x1 - e.x0;
+        const inner = (x) => (e.side === 0 ? x : e.x0 + e.x1 - x); // mirror for the right edge
+        // Stalls: a cart under a tarp against the wall, customers standing on the road side of it.
+        const nS = Rng.poisson(h, (T.STALLS_PER_100M * s.len) / 100 * (gully ? 1.3 : 1));
+        for (let i = 0; i < nS; i++) {
+          const y = Math.round(Rng.range(h, s.y0 + 6, s.y1 - 6) * 10) / 10;
+          const kind = Rng.pick(h, World.STALL_KINDS);
+          const nc = Rng.int(h, 1, 3);
+          const w = Math.min(T.STALL_W, ew - 0.15);
+          if (w < 0.7 || !edgeFree(st, L, s, e.side, y, T.STALL_L / 2 + 1)) continue;
+          const x = inner(e.x0 + 0.08 + w / 2);
+          const k = { id: st.nextId++, kind, side: e.side, x, y, w, l: T.STALL_L };
+          st.stalls.push(k);
+          for (let c = 0; c < nc; c++) {
+            // Wide footpath: customers between the stall and the kerb. Narrow shoulder: beside it, not in the road.
+            const wide = ew >= 2;
+            const cx = wide ? inner(e.x0 + 0.08 + w + 0.35 + Rng.range(h, 0, 0.3)) : inner(e.x0 + ew / 2);
+            const cy = wide ? y + Rng.range(h, -1.1, 1.1) : y + (c & 1 ? 1 : -1) * (T.STALL_L / 2 + 0.4 + (c >> 1) * 0.6);
+            const pd = newPed(st, h, e.side, 0.5, cx, cy, Rng.sign(h));
+            pd.mode = 'wait';
+            pd.stall = k.id;
+            st.peds.push(pd);
+          }
+        }
+        // Missing drain slabs: footpaths only.
+        if (e.footpath) {
+          const nD = Rng.poisson(h, (T.DRAINS_PER_100M * s.len) / 100);
+          for (let i = 0; i < nD; i++) {
+            const y = Math.round(Rng.range(h, s.y0 + 4, s.y1 - 4) * 10) / 10;
+            const x = inner(Rng.range(h, e.x0 + 0.5 + T.DRAIN_W / 2, e.x1 - 0.4 - T.DRAIN_W / 2));
+            if (!edgeFree(st, L, s, e.side, y, T.DRAIN_L / 2 + 0.5)) continue;
+            st.drains.push({ id: st.nextId++, x, y, w: T.DRAIN_W, l: T.DRAIN_L });
+          }
+        }
+        // Puddles on the edge (footpath or shoulder).
+        const nW = Rng.poisson(h, (T.FOOTPATH_PUDDLES_PER_100M * s.len) / 100 * (L.weather === 'rain' ? T.RAIN_PUDDLE_MULT : 1));
+        for (let i = 0; i < nW; i++) {
+          const rx = Rng.range(h, 0.35, Math.min(0.9, ew / 2 - 0.1));
+          const ry = Rng.range(h, 0.5, 1.2);
+          const y = Rng.range(h, s.y0 + 3, s.y1 - 3);
+          if (y < 20 || rx < 0.3) continue;
+          st.puddles.push({ id: st.nextId++, x: (e.x0 + e.x1) / 2 + Rng.range(h, -0.2, 0.2), y, rx, ry, leak: 0 });
+        }
+        // Street dogs asleep on the edge; in gullies some sleep at the edge of the lane.
+        const nG = Rng.poisson(h, (T.DOGS_PER_100M * s.len) / 100 * (gully ? 1.6 : 1));
+        for (let i = 0; i < nG; i++) {
+          const y = Math.round(Rng.range(h, s.y0 + 4, s.y1 - 4) * 10) / 10;
+          const inLane = gully && Rng.chance(h, 0.3);
+          const x = inLane ? (e.side === 0 ? Rng.range(h, 0.35, 0.9) : Rng.range(h, e.x0 - 0.9, e.x0 - 0.35)) : inner(Rng.range(h, e.x0 + 0.35, e.x1 - 0.35));
+          if (y < 40 || World.barricadeAt(L, x, y, 1) || st.stalls.some((k) => Math.abs(k.y - y) < 2.5 && Math.abs(k.x - x) < 1.5)) continue;
+          if (inLane && st.npcs.some((n) => n.parked && Math.abs(n.y - y) < n.l / 2 + 3 && Math.abs(n.x - x) < 3)) continue; // never trap a lane beside a parked car
+          st.dogs.push({ id: st.nextId++, x, y, hx: x, hy: y, variant: Rng.int(h, 0, 2), mode: 'sleep', t: 0, vx: 0, vy: 0, face: Rng.sign(h), woke: 0, bit: 0, barkT: 0 });
+        }
+      }
+      // Sunken manhole covers in the road.
+      const xr = (s.xs.divided ? s.xs.ownR : s.xs.roadR) - 0.8;
+      const nM = Rng.poisson(h, (T.MANHOLES_PER_100M * s.len) / 100);
+      for (let i = 0; i < nM; i++) {
+        const y = Math.round(Rng.range(h, s.y0 + 3, s.y1 - 3) * 10) / 10;
+        const x = Rng.range(h, 0.8, xr);
+        if (y < 25 || nearBreaker(L, y, 3) || World.barricadeAt(L, x, y, 1) || st.potholes.some((ph) => Math.abs(ph.y - y) < ph.r + 1 && Math.abs(ph.x - x) < ph.r + 1)) continue;
+        st.manholes.push({ id: st.nextId++, x, y, r: T.MANHOLE_R });
+      }
+    }
+    for (const a of [st.stalls, st.drains, st.dogs, st.manholes, st.puddles, st.peds]) a.sort((p, q) => p.y - q.y);
+  }
+
+  /** Street dogs: asleep until you whizz past; then they chase, bark, and bite if they catch you. */
+  function updateDogs(st, L, p, ev) {
+    for (const d of st.dogs) {
+      const dy = d.y - p.y;
+      if (dy < -60 || dy > T.ACTIVE_RANGE) continue;
+      if (d.mode === 'sleep') {
+        d.vx = d.vy = 0;
+        // A scooter stopped right next to it: it gets up and flops down a few metres on, by the wall.
+        if (p.v < 0.5 && p.crash <= 0 && Math.abs(dy) < 2 && Math.abs(d.x - p.x) < 1.6) {
+          const s = World.segmentAt(L, d.y);
+          d.mode = 'return';
+          d.woke = 1;
+          d.hy = d.y + (dy >= 0 ? 4 : -4);
+          d.hx = d.x < s.xs.ownR ? s.xs.wallL + 0.35 : s.xs.wallR - 0.35;
+          continue;
+        }
+        if (!d.woke && p.crash <= 0 && Math.abs(dy) < T.DOG_WAKE_DIST && Math.abs(d.x - p.x) < 2.5 && p.v > T.DOG_WAKE_SPEED) {
+          d.woke = 1;
+          const chance = T.DOG_WAKE_CHANCE * (p.surface === 'footpath' ? 1.6 : 1) * (1 + Math.max(0, 50 - p.karma) / 50);
+          if (Rng.chance(st, Math.min(0.95, chance))) {
+            d.mode = 'chase';
+            d.t = T.DOG_CHASE_TIME;
+            d.barkT = 0;
+            ev.push({ type: 'dogChase', id: d.id, x: d.x, y: d.y, pid: p.id });
+          }
+        }
+        continue;
+      }
+      const s = World.segmentAt(L, d.y);
+      let tx = d.hx;
+      let ty = d.hy;
+      let sp = 2.2;
+      if (d.mode === 'chase') {
+        d.t -= DT;
+        tx = p.x;
+        ty = p.y - 0.3;
+        sp = T.DOG_CHASE_SPEED;
+        d.barkT -= DT;
+        if (d.barkT <= 0) {
+          d.barkT = Rng.range(st, 0.6, 1.0);
+          ev.push({ type: 'bark', id: d.id, x: d.x, y: d.y });
+        }
+      }
+      const ddx = tx - d.x;
+      const ddy = ty - d.y;
+      const dist = Math.hypot(ddx, ddy);
+      const v = Math.min(sp, dist * 4);
+      d.vx = dist > 0.01 ? (ddx / dist) * v : 0;
+      d.vy = dist > 0.01 ? (ddy / dist) * v : 0;
+      if (Math.abs(d.vx) > 0.2) d.face = d.vx > 0 ? 1 : -1;
+      d.x = clamp(d.x + d.vx * DT, s.xs.limitL + 0.3, s.xs.limitR - 0.3);
+      d.y += d.vy * DT;
+      if (d.mode === 'chase') {
+        if (!d.bit && p.crash <= 0 && p.invuln <= 0 && p.handT <= 0 && Math.hypot(d.x - p.x, d.y - p.y) < T.DOG_BITE_DIST) {
+          d.bit = 1;
+          d.mode = 'return';
+          const amount = Math.min(p.money, T.DOG_BITE_COST);
+          p.money -= amount;
+          p.wobble = Math.max(p.wobble, T.WOBBLE_TIME);
+          p.v *= 0.5;
+          p.calmT = 0;
+          p.stats.dogBites++;
+          ev.push({ type: 'dogBite', id: d.id, amount, x: p.x, y: p.y, pid: p.id });
+        } else if (d.t <= 0) d.mode = 'return';
+      } else if (dist < 0.1) { // home again: back to sleep
+        d.mode = 'sleep';
+        d.vx = d.vy = 0;
+      }
+    }
+  }
+
+  function drainUnder(st, x, y) {
+    const reach = T.PLAYER_L * 0.3;
+    for (const d of st.drains) {
+      if (d.y > y + 3) break;
+      if (Math.abs(x - d.x) < d.w / 2 + 0.05 && Math.abs(y - d.y) < d.l / 2 + reach) return d;
+    }
+    return null;
+  }
+
+  function manholeUnder(st, x, y) {
+    for (const m of st.manholes) {
+      if (m.y > y + 2) break;
+      if (Math.abs(x - m.x) < m.r + 0.1 && Math.abs(y - m.y) < m.r + T.PLAYER_L * 0.3) return m;
+    }
+    return null;
+  }
+
+  /** Slip and fall: hitting a puddle (or a wet manhole cover) too fast, worse when steering hard. */
+  function slipChance(st, p, base) {
+    if (p.steadyT > 0 || p.invuln > 0) return 0;
+    return base * (st.weather === 'rain' ? 2 : 1) * (Math.abs(p.steer) > 0.5 ? 2 : 1) * (1 - 0.05 * p.skill);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Honking etiquette: honk at someone too often and they let you have it.
+  // ---------------------------------------------------------------------------
+  function honkedAt(st, t) {
+    if (st.tick - t.honkTick > Math.round(T.HORN_WINDOW / DT)) t.honkN = 0;
+    t.honkN++;
+    t.honkTick = st.tick;
+  }
+
+  /** Nearest person or (moving) vehicle ahead in the scooter's path, within GAALI_RANGE. */
+  function hornTarget(st, p) {
+    let best = T.GAALI_RANGE;
+    let t = null;
+    for (const pd of st.peds) {
+      const dy = pd.y - p.y;
+      if (dy < 0 || dy >= best || Math.abs(pd.x - p.x) > T.PLAYER_W / 2 + 0.9 || pd.mode === 'gone') continue;
+      best = dy; t = pd;
+    }
+    for (const n of st.npcs) {
+      if (n.parked || n.kind === 'cow') continue;
+      const dy = n.y - n.dir * n.l / 2 - p.y;
+      if (dy < 0 || dy >= best || Math.abs(n.x - p.x) > (n.w + T.PLAYER_W) / 2 + 0.4) continue;
+      best = dy; t = n;
+    }
+    return t;
+  }
+
+  function gaali(st, p, who, id, x, y, ev) {
+    loseKarma(p, T.GAALI_KARMA);
+    p.gaaliT = T.GAALI_COOLDOWN;
+    p.stats.gaalis++;
+    ev.push({ type: 'gaali', who, id, x, y, karma: T.GAALI_KARMA, pid: p.id });
+  }
+
   /** opts: { skill } (rider skill level 0..SKILL_MAX from the player's profile). */
   function create(levelId, seed, opts) {
     const L = World.level(levelId);
@@ -416,6 +696,10 @@
       peds: [],
       potholes: [],
       puddles: [],
+      stalls: [],
+      drains: [],
+      manholes: [],
+      dogs: [],
       orders: L.drops.map((d) => ({ id: d.i + 1, y: d.y, kind: d.kind, name: d.name, due: d.due, status: 'pending', at: 0, rating: 0, tip: 0, late: 0 })),
     };
     const layout = { rng: Rng.hash(seed, levelId, 'layout') | 0 };
@@ -424,6 +708,17 @@
     placeCows(st, L, layout);
     placeParked(st, L, layout);
     placePeds(st, L, layout);
+    st.busy = placeBusy(L, levelId, seed);
+    for (const b of st.busy) {
+      const s = World.segmentAt(L, b.y0);
+      for (const q of b.peds) {
+        const band = World.pedBand(s, q.side);
+        st.peds.push(newPed(st, layout, q.side, q.u, band[0] + q.u * (band[1] - band[0]), q.y, q.dir));
+      }
+      delete b.peds;
+    }
+    st.peds.sort((a, b) => a.y - b.y);
+    placeStreet(st, L, levelId, seed);
     // Initial traffic around the start.
     const p = st.players[0];
     buildObstacles(st, L, p.y);
@@ -454,26 +749,49 @@
 
   function rainMult(st) { return st.weather === 'rain' ? T.RAIN_NPC_SPEED_MULT : 1; }
 
+  /** Personalities: racing bikers, learner drivers, horn-happy drivers; every tanker leans on its air horn. */
+  function npcTrait(st, kind) {
+    if (kind === 'bike') return Rng.chance(st, T.RACER_CHANCE) ? 'racer' : '';
+    if (kind === 'car') return Rng.chance(st, T.SLOW_CAR_CHANCE) ? 'slow' : Rng.chance(st, T.HONKER_CHANCE) ? 'honker' : '';
+    if (kind === 'auto') return Rng.chance(st, T.HONKER_CHANCE) ? 'honker' : '';
+    if (kind === 'tanker') return 'honker';
+    return '';
+  }
+
+  function traitSpeed(st, trait, vDes) {
+    if (trait === 'racer') return Rng.range(st, T.RACER_V_MIN, T.RACER_V_MAX) * rainMult(st);
+    if (trait === 'slow') return Rng.range(st, T.SLOW_CAR_V_MIN, T.SLOW_CAR_V_MAX);
+    return vDes;
+  }
+
+  function busyCart(st, s, busy) {
+    if (!busy || !(s.mix.cart > 0)) return false;
+    return Rng.chance(st, T.BUSY_CART_CHANCE * (busy.kind === 'market' ? 2 : 1));
+  }
+
   function trySpawnSame(st, L, p, y, behind) {
     if (y < -T.DESPAWN_BEHIND || y > L.length + 40) return;
     const s = World.segmentAt(L, y);
-    const dens = s.jam ? Math.max(T.JAM_MIN_DENSITY, s.traffic) : s.traffic;
+    const busy = busyAt(st, y);
+    const dens = (s.jam ? Math.max(T.JAM_MIN_DENSITY, s.traffic) : s.traffic) * (busy ? T.BUSY_TRAFFIC : 1);
     if (!(dens > 0)) return;
     let lane = Rng.int(st, 0, s.lanesOwn - 1);
-    const kind = Rng.weighted(st, s.mix);
+    const kind = busyCart(st, s, busy) ? 'cart' : Rng.weighted(st, s.mix);
     if (!kind) return;
     const V = VEHICLES[kind];
     let jitter = kind === 'bike' ? Rng.range(st, -1.3, 1.3) : Rng.range(st, -0.25, 0.25);
     if (kind === 'cart') { lane = 0; jitter = -0.6; }
     const x = clamp(World.laneCenter(lane) + jitter, V.w / 2 + 0.2, s.xs.ownR - V.w / 2 - 0.2);
     const want = s.jam ? Rng.range(st, T.JAM_GAP_MIN, T.JAM_GAP_MAX) : (100 / (dens * T.TRAFFIC_PER_100M)) * Rng.range(st, 0.55, 1.45);
-    const vDes = Rng.range(st, V.vMin, V.vMax) * rainMult(st);
+    const trait = s.jam ? '' : npcTrait(st, kind);
+    const vDes = traitSpeed(st, trait, Rng.range(st, V.vMin, V.vMax) * rainMult(st));
     if (behind && p.v > vDes - 1.5) return;
     if (World.barricadeAt(L, x, y, V.l / 2 + 2)) return;
     if (World.laneBlocked(L, lane, y - V.l, y + 25) && kind !== 'bike') return;
     if (!spawnClear(x, V.w, y, V.l, want, 1)) return;
     const n = newNpc(st, kind, x, y, 1);
     n.lane = lane;
+    n.trait = trait;
     n.vDes = vDes;
     n.v = s.jam ? Math.min(vDes, World.jamCap(y, st.tick * DT)) : vDes;
     if (kind === 'car') n.cab = Rng.chance(st, 0.25);
@@ -486,17 +804,20 @@
     const s = World.segmentAt(L, y);
     if (!(s.oncoming > 0) || s.xs.oncLanes <= 0) return;
     const j = Rng.int(st, 0, s.xs.oncLanes - 1);
-    const kind = Rng.weighted(st, s.mix);
+    const busy = busyAt(st, y);
+    const kind = busyCart(st, s, busy) ? 'cart' : Rng.weighted(st, s.mix);
     if (!kind) return;
     const V = VEHICLES[kind];
     const off = kind === 'bike' ? Rng.range(st, -1.0, 1.0) : kind === 'cart' ? 0.6 : Rng.range(st, -0.2, 0.2);
     const x = World.oncCenter(s, kind === 'cart' ? s.xs.oncLanes - 1 : j) + off;
-    const want = (100 / (s.oncoming * T.ONCOMING_PER_100M)) * Rng.range(st, 0.55, 1.45);
-    const vDes = Rng.range(st, V.vMin, V.vMax) * rainMult(st);
+    const want = (100 / (s.oncoming * T.ONCOMING_PER_100M * (busy ? T.BUSY_ONCOMING : 1))) * Rng.range(st, 0.55, 1.45);
+    const trait = npcTrait(st, kind);
+    const vDes = traitSpeed(st, trait, Rng.range(st, V.vMin, V.vMax) * rainMult(st));
     if (!spawnClear(x, V.w, y, V.l, want, -1)) return;
     const n = newNpc(st, kind, x, y, -1);
     n.lane = j;
     n.off = off;
+    n.trait = trait;
     n.vDes = vDes;
     n.v = vDes;
     st.npcs.push(n);
@@ -681,7 +1002,14 @@
     if (n.cab && n.stop > 0 && n.lane === 0) off = -0.6;
     if (n.hold > 0) off = n.holdOff;
     n.tx = clamp(cx + off, n.w / 2 + 0.15, n.hold > 0 ? hiX : s.xs.ownR - n.w / 2 - 0.15);
+    if (n.kind === 'tanker' && n.hold <= 0) tankerSway(st, n, n.w / 2 + 0.15, hiX);
     return V;
+  }
+
+  /** Water tankers wander across their lane, and do not stop wandering because you are beside them. */
+  function tankerSway(st, n, lo, hi) {
+    const nx = clamp(n.tx + T.TANKER_SWAY * Math.sin((st.tick * DT * 2 * Math.PI) / T.TANKER_SWAY_PERIOD + n.id), lo, hi);
+    if (sweepClear(n, nx, 0.05, 0.8, true)) n.tx = nx;
   }
 
   /**
@@ -694,7 +1022,7 @@
     const ob = findLeader(n, base, n.w / 2 + 0.1, n.dir, n.dir < 0, 16);
     if (!ob) return;
     const along = ob.vy * n.dir;
-    const slow = ob.kind === K_PED || ob.kind === K_COW ||
+    const slow = ob.kind === K_PED || ob.kind === K_COW || (ob.kind === K_PLAYER && Math.abs(ob.vy) < 1) ||
       (ob.kind === K_VEH && (ob.w < 1 ? along < 2 : (ob.ref.stop > 0 || ob.ref.kind === 'cart') && along < 1.5));
     if (!slow) return;
     const shiftR = ob.x + ob.w / 2 + 0.3 - (base - n.w / 2);
@@ -743,7 +1071,7 @@
       else if (visiblePotholeAhead(st, n.x, n.y, 12, 0.4)) replan = true;
     }
     if (replan) {
-      n.plan = 0.4 + Rng.next(st) * 0.4;
+      n.plan = n.trait === 'racer' ? 0.2 + Rng.next(st) * 0.2 : 0.4 + Rng.next(st) * 0.4;
       // 1. Pick the line with the most room ahead: current x, +/- 0.35, every
       //    lane centre and lane line, and hugging the kerb.
       let goal = n.x;
@@ -790,6 +1118,7 @@
     const hi = s.xs.oncL + nl * LW - n.w / 2 - 0.15;
     if (n.hold <= 0) passObstacle(n, base, s.xs.divided ? lo : lo - 1.5, hi, 2.8);
     n.tx = clamp(base + (n.hold > 0 ? n.holdOff : 0), s.xs.divided ? lo : lo - 1.5, hi);
+    if (n.kind === 'tanker' && n.hold <= 0) tankerSway(st, n, s.xs.divided ? lo : lo - 0.6, hi);
   }
 
   function wrongSideLateral(st, L, n, s) {
@@ -847,7 +1176,7 @@
     // A wrong-side rider nose to nose with a driver: words are exchanged.
     if (n.ws && lead && lead.kind === K_VEH && lead.ref.dir > 0 && LEAD.gap < 4 && n.v < 2) argue(st, lead.ref, n, 'wrongSide', ev);
     let vT = vCap;
-    if (lead) vT = Math.min(vCap, Math.max(0, (LEAD.gap - T.FOLLOW_GAP) / T.FOLLOW_HEADWAY));
+    if (lead) vT = n.trait === 'racer' ? Math.min(vCap, Math.max(0, (LEAD.gap - 1.2) / 0.45)) : Math.min(vCap, Math.max(0, (LEAD.gap - T.FOLLOW_GAP) / T.FOLLOW_HEADWAY));
     const decel = n.stopHard ? T.NPC_STOP_DEAD_DECEL : T.NPC_DECEL;
     let a = (vT - n.v) * 3;
     if (a > T.NPC_ACCEL) a = T.NPC_ACCEL;
@@ -861,9 +1190,24 @@
       n.blocked = 0;
       n.byPlayer = 0;
     }
+    // Gridlock valve: nose to nose with opposite traffic for too long, one of them
+    // ducks into a side gate or driveway (in real gullies someone reverses).
+    if (n.blocked > T.GRIDLOCK_TIME && lead && lead.kind === K_VEH && lead.ref.dir !== n.dir && !n.ws) {
+      n.gone = 1;
+      ev.push({ type: 'npcTurnOff', id: n.id, x: n.x, y: n.y, kind: n.kind });
+    }
     if (n.byPlayer > 1.5 && n.honk <= 0) {
       n.honk = 3;
       ev.push({ type: 'honkNpc', id: n.id, x: n.x, y: n.y, kind: n.kind, atPlayer: true });
+    }
+    if (near && n.honk <= 0 && !n.parked) {
+      if (n.trait === 'honker' && Math.abs(n.y - p.y) < 35) { // leans on the horn, faster when we are in the way
+        n.honk = Rng.range(st, T.HONKER_EVERY_MIN, T.HONKER_EVERY_MAX) * (n.byPlayer > 0.3 ? 0.6 : 1);
+        ev.push({ type: 'honkNpc', id: n.id, x: n.x, y: n.y, kind: n.kind, atPlayer: !!lead && lead.kind === K_PLAYER, trait: 'honker' });
+      } else if (lead && lead.kind === K_VEH && lead.ref.trait === 'slow' && n.blocked > 1.5) { // stuck behind a learner
+        n.honk = Rng.range(st, 2, 4);
+        ev.push({ type: 'honkNpc', id: n.id, x: n.x, y: n.y, kind: n.kind, atPlayer: false });
+      }
     }
 
     // NPCs never drive into whatever is ahead of them.
@@ -878,6 +1222,10 @@
     const prevY = n.y;
     n.y += n.dir * move;
     if (L.junctions.length) junctionTurnOff(L, n, prevY);
+    if (n.trait === 'racer' && !n.passed && (prevY - p.y) * (n.y - p.y) <= 0 && Math.abs(n.x - p.x) < 2.5) {
+      n.passed = 1;
+      ev.push({ type: 'racerPass', id: n.id, x: n.x, y: n.y, dir: n.dir });
+    }
 
     const dx = n.tx - n.x;
     const stp = latV * DT;
@@ -1070,11 +1418,22 @@
     const s = World.segmentAt(L, pd.y);
     if (pd.dodge > 0) {
       pd.dodge -= DT;
-      pd.x += pd.dodgeV * DT;
+      pd.x = clamp(pd.x + pd.dodgeV * DT, s.xs.wallL + 0.3, s.xs.wallR - 0.3);
       pd.vx = pd.dodgeV;
       pd.vy = 0;
       if (pd.dodge <= 0 && pd.mode === 'walk') settleBand(pd, s);
       return;
+    }
+    // Standing about (waiting, chatting, hailing) right in front of a stopped scooter: step aside.
+    if ((pd.mode === 'wait' || pd.mode === 'chat' || pd.mode === 'hail') && p.v < 0.5 && p.crash <= 0) {
+      const ahead = pd.y - p.y;
+      if (ahead > -0.2 && ahead < T.PLAYER_L / 2 + 2.5 && Math.abs(pd.x - p.x) < T.PLAYER_W / 2 + PED.w / 2 + 0.45) {
+        let dir = pd.side === 0 ? -1 : 1; // towards their own edge...
+        if ((p.x - pd.x) * dir > 0) dir = -dir; // ...unless the scooter is on that side
+        pd.dodge = 0.6;
+        pd.dodgeV = dir * 1.2;
+        return;
+      }
     }
     if (pd.mode === 'wait' || pd.mode === 'gone') { pd.vx = pd.vy = 0; return; }
     if (pd.mode === 'hail' || pd.mode === 'chat') {
@@ -1088,6 +1447,14 @@
     if (pd.mode === 'cross') {
       pd.vy = 0;
       if (crossBlocked(pd)) { pd.vx = 0; return; }
+      // A scooter stopped across our path: walk round its nose or tail instead of into it.
+      const nx = pd.x + pd.cdir * 0.6;
+      if (p.v < T.PED_SAFE_SPEED && Math.abs(p.x - nx) < T.PLAYER_W / 2 + PED.w / 2 + 0.1 && Math.abs(p.y - pd.y) < T.PLAYER_L / 2 + PED.l / 2 + 0.15) {
+        pd.vx = 0;
+        pd.vy = (pd.y >= p.y ? 1 : -1) * 0.9;
+        pd.y += pd.vy * DT;
+        return;
+      }
       pd.vx = pd.cdir * T.PED_CROSS_SPEED;
       pd.x += pd.vx * DT;
       if ((pd.cdir > 0 && pd.x >= pd.cx) || (pd.cdir < 0 && pd.x <= pd.cx)) {
@@ -1104,9 +1471,17 @@
       return;
     }
     // walking along the edge
-    pd.y += pd.dir * pd.v * DT;
+    const ahead0 = pd.y + pd.dir * 0.9;
+    const meBlocks = p.v < T.PED_SAFE_SPEED && Math.abs(p.y - ahead0) < T.PLAYER_L / 2 + 0.5 && Math.abs(p.x - pd.x) < T.PLAYER_W / 2 + 0.45;
+    if (!meBlocks) pd.y += pd.dir * pd.v * DT; // pause while stepping round a stopped scooter
     const b = World.pedBand(s, pd.side);
     let tx = b[0] + pd.u * (b[1] - b[0]);
+    if (meBlocks) tx = pd.x <= p.x ? p.x - T.PLAYER_W / 2 - 0.45 : p.x + T.PLAYER_W / 2 + 0.45;
+    for (const k of st.stalls) { // round the chai stall, on the road side
+      if (k.side !== pd.side || Math.abs(k.y - (pd.y + pd.dir * 0.8)) > k.l / 2 + 0.6) continue;
+      if (k.side === 0) tx = Math.max(tx, k.x + k.w / 2 + 0.3);
+      else tx = Math.min(tx, k.x - k.w / 2 - 0.3);
+    }
     if (!(pd.side === 0 ? s.footpathL : s.footpathR)) {
       // no footpath: step out into the road around parked cars
       const ahead = pd.y + pd.dir * 0.8;
@@ -1123,7 +1498,7 @@
     pd.vx = (pd.x - ox) / DT;
     pd.vy = pd.dir * pd.v;
     const dy = pd.y - p.y;
-    if (s.peds > 0 && dy > 14 && dy < 70 && Rng.chance(st, T.PED_CROSS_PER_S * DT)) startCross(pd, s);
+    if (s.peds > 0 && dy > 14 && dy < 70 && Rng.chance(st, T.PED_CROSS_PER_S * DT * (busyAt(st, pd.y) ? T.BUSY_CROSS_MULT : 1))) startCross(pd, s);
     else if (pd.side === 0 && dy > 15 && dy < 80 && Rng.chance(st, T.HAIL_PER_S * DT)) { pd.mode = 'hail'; pd.t = T.HAIL_TIME; pd.thanked = 0; ev.push({ type: 'hail', pedId: pd.id, x: pd.x, y: pd.y }); }
   }
 
@@ -1169,6 +1544,32 @@
   // ---------------------------------------------------------------------------
 
   function hornEffects(st, L, p, ev) {
+    // The honk is aimed at whoever is nearest ahead in our path. Honk at the same
+    // one too often, or lean on the horn, and someone gives us a gaali.
+    let angry = null;
+    const target = hornTarget(st, p);
+    if (target) {
+      honkedAt(st, target);
+      if (!target.gaali && target.honkN >= T.GAALI_HONKS) angry = target;
+    }
+    if (!angry && p.hornLog.length > T.GAALI_SPAM) { // leaning on the horn: whoever is nearest answers
+      let best = T.GAALI_RANGE;
+      for (const pd of st.peds) {
+        const d = Math.hypot(pd.x - p.x, pd.y - p.y);
+        if (!pd.gaali && pd.mode !== 'gone' && d < best) { best = d; angry = pd; }
+      }
+      for (const n of st.npcs) {
+        if (n.parked || n.kind === 'cow' || n.kind === 'cart' || n.gaali) continue;
+        const d = Math.hypot(n.x - p.x, n.y - p.y);
+        if (d < best) { best = d; angry = n; }
+      }
+    }
+    if (angry && p.gaaliT <= 0) {
+      angry.gaali = 1;
+      const isPed = angry.kind == null;
+      gaali(st, p, isPed ? 'ped' : angry.kind, angry.id, angry.x, angry.y, ev);
+      if (!isPed && angry.honk <= 0) { angry.honk = 2; ev.push({ type: 'honkNpc', id: angry.id, x: angry.x, y: angry.y, kind: angry.kind, atPlayer: true, angry: true }); }
+    }
     for (const pd of st.peds) {
       const dy = pd.y - p.y;
       if (dy < 0 || dy > T.HORN_PED_RANGE || Math.abs(pd.x - p.x) > T.HORN_PED_SIDE) continue;
@@ -1223,10 +1624,12 @@
     p.wobble = 0;
     p.calmT = 0;
     if (other && withKind === 'ped') { other.mode = 'stumble'; other.t = T.FIGHT_TIME; other.dodge = 0; }
-    else if (other && withKind !== 'cow') { other.stop = Math.max(other.stop || 0, 1.2); other.v *= 0.3; }
+    else if (other && withKind === 'dog') { other.mode = 'return'; other.woke = 1; } // yelps and runs home
+    else if (other && withKind !== 'cow' && withKind !== 'stall') { other.stop = Math.max(other.stop || 0, 1.2); other.v *= 0.3; }
+    if (withKind === 'slip') p.stats.slips++;
     ev.push({ type: 'crash', with: withKind, x: p.x, y: p.y, id: other ? other.id : 0, pid: p.id });
     // A clash with a person or a vehicle turns into an argument (docs/concepts/karma-and-luck.md).
-    const party = withKind === 'ped' ? 'ped' : other && !other.parked && (withKind === 'vehicle' || withKind === 'headOn') ? other.kind : '';
+    const party = withKind === 'ped' ? 'ped' : withKind === 'stall' ? 'vendor' : other && !other.parked && (withKind === 'vehicle' || withKind === 'headOn') ? other.kind : '';
     if (party && T.FIGHT_KARMA[party] != null) {
       p.fight = T.FIGHT_TIME;
       p.fightWith = party;
@@ -1234,7 +1637,7 @@
       p.fightSorry = 0;
       p.fightArgued = 0;
       p.fights++;
-      if (party !== 'ped') other.stop = Math.max(other.stop, T.FIGHT_TIME);
+      if (party !== 'ped' && party !== 'vendor') other.stop = Math.max(other.stop, T.FIGHT_TIME);
       ev.push({ type: 'fight', phase: 'start', with: party, id: other.id, pid: p.id });
     }
   }
@@ -1330,7 +1733,10 @@
       case 'skillSlow': amount = Rng.int(st, 10, 25); p.xpBonus -= amount; break;
       default: break;
     }
-    ev.push({ type: 'luck', good, kind, amount, source, pid: p.id });
+    // Water and sweets near a street stall come from the stall: chai, momos, biryani.
+    let vendor = '';
+    if (good && (kind === 'water' || kind === 'sweets')) for (const k of st.stalls) if (Math.abs(k.y - p.y) < 25) { vendor = k.kind; break; }
+    ev.push({ type: 'luck', good, kind, amount, source, vendor, pid: p.id });
   }
 
   function luckTick(st, p, ev) {
@@ -1380,6 +1786,7 @@
     if (p.sugarT > 0) p.sugarT = Math.max(0, p.sugarT - DT);
     if (p.punctureT > 0) p.punctureT = Math.max(0, p.punctureT - DT);
     if (p.fadeT > 0) p.fadeT = Math.max(0, p.fadeT - DT);
+    if (p.gaaliT > 0) p.gaaliT = Math.max(0, p.gaaliT - DT);
     let horn = inp.horn;
     if (p.fight > 0 && fightTick(st, p, inp, ev)) horn = 0;
     else if (p.fight > 0) horn = 0;
@@ -1394,12 +1801,25 @@
       }
       return;
     }
-    if (p.handT > 0) { // handing over an order
+    if (p.handT > 0) { // handing over an order: a short scene at the gate or the door
       p.v = 0;
+      const o = st.orders.find((q) => q.id === p.handId);
+      if (horn && p.hornCd <= 0) { // honking inside the society: the guard (or the customer) is not amused
+        p.hornCd = Math.round(T.HORN_COOLDOWN / DT);
+        p.stats.honks++;
+        ev.push({ type: 'horn', x: p.x, y: p.y, costly: false, pid: p.id });
+        if (!p.handHonk) { p.handHonk = 1; gaali(st, p, o && o.kind === 'apartment' ? 'guard' : 'customer', 0, p.x - 1.5, p.y + 1, ev); }
+      }
       p.handT -= DT;
+      p.handStepT -= DT;
+      const sc = o ? sceneOf(o.kind, p.handScene) : null;
+      if (sc && p.handStepT <= 0 && p.handStep < sc.steps.length - 1) {
+        p.handStep++;
+        p.handStepT += sc.steps[p.handStep][1];
+        handStepEvent(p, o, sc, ev);
+      }
       if (p.handT <= 0) {
         p.handT = 0;
-        const o = st.orders.find((q) => q.id === p.handId);
         if (o && o.status === 'pending') deliverOrder(st, p, o, ev);
       }
       return;
@@ -1473,6 +1893,29 @@
       }
     } else p.bumpAcc = 0;
 
+    // Missing drain slabs: the front wheel drops in (crawl across and you just lurch).
+    const dr = drainUnder(st, p.x, p.y);
+    if (dr) {
+      if (p.drain !== dr.id) {
+        p.drain = dr.id;
+        if (p.v > T.DRAIN_SAFE_SPEED && p.invuln <= 0) { crash(st, p, 'drain', null, ev); return; }
+        p.wobble = Math.max(p.wobble, T.MINOR_WOBBLE);
+        ev.push({ type: 'bump', kind: 'drain', x: p.x, y: p.y, pid: p.id });
+      }
+    } else p.drain = 0;
+    // Sunken manhole covers: a clunk; slippery when wet.
+    const mh = manholeUnder(st, p.x, p.y);
+    if (mh) {
+      if (p.manhole !== mh.id) {
+        p.manhole = mh.id;
+        if (p.v > 3) {
+          p.wobble = Math.max(p.wobble, T.MINOR_WOBBLE);
+          ev.push({ type: 'bump', kind: 'manhole', x: p.x, y: p.y, pid: p.id });
+          if (rain && p.v > T.SLIP_MIN_SPEED && Rng.chance(st, slipChance(st, p, T.MANHOLE_SLIP_CHANCE) * (Math.abs(p.steer) > 0.5 ? 1 : 0))) { crash(st, p, 'slip', null, ev); return; }
+        }
+      }
+    } else p.manhole = 0;
+
     // Speed breakers (§7.6): full road width, not the footpath.
     for (const b of L.breakers) {
       if (prevY < b.y && p.y >= b.y && surf === 'road') {
@@ -1515,6 +1958,7 @@
         p.v *= T.PUDDLE_SPEED_MULT;
         ev.push({ type: 'splash', x: p.x, y: p.y, by: p.id, size: Math.min(1, (q.rx + q.ry) / 3) * Math.min(1, v0 / 8), player: true });
         if (v0 > T.SPLASH_MIN_SPEED) splashPeds(st, p.x, T.PLAYER_W, q, p, ev);
+        if (v0 > T.SLIP_MIN_SPEED && Rng.chance(st, slipChance(st, p, T.SLIP_CHANCE))) { crash(st, p, 'slip', null, ev); return; }
       }
     } else p.puddle = 0;
 
@@ -1527,9 +1971,15 @@
         if (p.dropT >= T.DROP_STOP_HOLD) {
           p.dropT = 0;
           p.v = 0;
-          p.handT = T.HANDOVER[o.kind];
+          const sc = pickScene(st, p, o.kind);
+          p.handScene = sc.id;
+          p.handStep = 0;
+          p.handStepT = sc.steps[0][1];
+          p.handT = sc.steps.reduce((a, q) => a + q[1], 0);
+          p.handHonk = 0;
           p.handId = o.id;
-          ev.push({ type: 'handover', orderId: o.id, kind: o.kind, name: o.name, x: p.x, y: o.y, pid: p.id });
+          ev.push({ type: 'handover', orderId: o.id, kind: o.kind, name: o.name, scene: sc.id, total: p.handT, x: p.x, y: o.y, pid: p.id });
+          handStepEvent(p, o, sc, ev);
         }
       } else p.dropT = 0;
       if (dy > T.DROP_ZONE / 2 + 1) missOrder(st, p, o, ev);
@@ -1547,6 +1997,9 @@
       if (costly) loseKarma(p, T.HORN_KARMA);
       ev.push({ type: 'horn', x: p.x, y: p.y, costly, pid: p.id });
       hornEffects(st, L, p, ev);
+      for (const d of st.dogs) {
+        if (d.mode === 'chase' && Math.hypot(d.x - p.x, d.y - p.y) < T.DOG_SCARE_RANGE) { d.mode = 'return'; ev.push({ type: 'dogScared', id: d.id, x: d.x, y: d.y }); }
+      }
     }
   }
 
@@ -1591,7 +2044,32 @@
       const dy = pd.y - p.y;
       if (dy > 3 || dy < -3) continue;
       if (Math.abs(pd.x - p.x) < hw + (PED.w / 2) * f && Math.abs(dy) < hl + (PED.l / 2) * f) {
+        if (p.v < T.PED_SAFE_SPEED) { // we are (nearly) stopped: they bumped into us. A nudge, not a crash.
+          if (pd.dodge <= 0) {
+            const away = pd.x >= p.x ? 1 : -1;
+            pd.dodge = 0.5;
+            pd.dodgeV = away * 1.4;
+            ev.push({ type: 'pedNudge', pedId: pd.id, x: pd.x, y: pd.y });
+          }
+          continue;
+        }
         crash(st, p, 'ped', pd, ev);
+        return;
+      }
+    }
+    for (const d of st.dogs) {
+      if (d.mode !== 'sleep' || d.y > p.y + 3 || d.y < p.y - 3) continue;
+      if (Math.abs(d.x - p.x) < hw + (T.DOG_W / 2) * f && Math.abs(d.y - p.y) < hl + (T.DOG_L / 2) * f) {
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        crash(st, p, 'dog', d, ev);
+        return;
+      }
+    }
+    for (const k of st.stalls) {
+      if (k.y > p.y + 4 || k.y < p.y - 4) continue;
+      if (Math.abs(k.x - p.x) < hw + k.w / 2 && Math.abs(k.y - p.y) < hl + k.l / 2) {
+        if (p.v < T.PED_SAFE_SPEED) { p.x = prev.x; p.y = prev.y; p.v = 0; continue; }
+        crash(st, p, 'stall', k, ev);
         return;
       }
     }
@@ -1611,15 +2089,40 @@
     return null;
   }
 
+  function sceneOf(kind, id) {
+    const list = World.HANDOVER_SCENES[kind] || [];
+    for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return list[0] || null;
+  }
+
+  /** Good karma makes the friendly scenes likelier, bad karma the slow ones. */
+  function pickScene(st, p, kind) {
+    const list = World.HANDOVER_SCENES[kind];
+    const lean = ((p.karma - 50) / 50) * T.SCENE_MOOD;
+    const w = {};
+    for (const sc of list) w[sc.id] = Math.max(0.1, sc.w * (1 + sc.mood * lean));
+    return sceneOf(kind, Rng.weighted(st, w));
+  }
+
+  function handStepEvent(p, o, sc, ev) {
+    const step = sc.steps[p.handStep];
+    if (step[0] === 'water') p.steadyT = T.STEADY_TIME;
+    ev.push({ type: 'handStep', orderId: o.id, kind: o.kind, scene: sc.id, step: step[0], i: p.handStep, n: sc.steps.length, t: step[1], x: p.x, y: o.y, pid: p.id });
+  }
+
   function deliverOrder(st, p, o, ev) {
     const late = Math.max(0, (st.time - o.due) / 60);
     let rating = 5 - Math.ceil(late - 1e-9) * T.LATE_STAR_PER_MIN;
     if (p.goods < 70) rating--;
     if (p.goods < 40) rating--;
+    if (p.handHonk) rating--; // honked at the gate
     rating = clamp(rating, 1, 5);
+    const sc = sceneOf(o.kind, p.handScene);
     let tip = 0;
     if (rating === 5) tip = 10 * Rng.int(st, T.TIP_5[0] / 10, T.TIP_5[1] / 10);
     else if (rating === 4) tip = 10 * Rng.int(st, T.TIP_4[0] / 10, T.TIP_4[1] / 10);
+    if (sc && sc.tipMult != null) tip = Math.round(tip * sc.tipMult);
+    if (sc && sc.tipBonus && rating >= 4) tip += sc.tipBonus;
     p.money += tip;
     if (rating === 5) gainKarma(p, T.HAPPY_KARMA);
     o.status = 'delivered';
@@ -1627,7 +2130,7 @@
     o.rating = rating;
     o.tip = tip;
     o.late = Math.round(late * 10) / 10;
-    ev.push({ type: 'delivered', orderId: o.id, kind: o.kind, name: o.name, rating, tip, late: o.late, goods: Math.round(p.goods), x: p.x, y: o.y, pid: p.id });
+    ev.push({ type: 'delivered', orderId: o.id, kind: o.kind, name: o.name, scene: p.handScene, honked: p.handHonk, rating, tip, late: o.late, goods: Math.round(p.goods), x: p.x, y: o.y, pid: p.id });
   }
 
   function missOrder(st, p, o, ev) {
@@ -1746,12 +2249,14 @@
       if (pd.y > lo && pd.y < hi) updatePed(st, L, pd, p, ev);
     }
 
+    updateDogs(st, L, p, ev);
     for (let i = 0; i < st.players.length; i++) playerCollisions(st, L, st.players[i], PREV[i], ev);
     for (let i = 0; i < st.players.length; i++) { deedsTick(st, st.players[i], ev); luckTick(st, st.players[i], ev); }
     if (st.tick % 15 === 0) pedChats(st, p, ev);
     while (PENDING.length) ev.push(PENDING.shift());
 
     spawnTick(st, L, p);
+    busyTick(st, p, ev);
     despawn(st, p);
 
     // Ambient horns: audio only (§7.4)
@@ -1789,5 +2294,5 @@
     return { id, leader: kinds[o.kind], leaderId: o.ref ? o.ref.id : null, gap: +LEAD.gap.toFixed(2), x: +o.x.toFixed(2), y: +o.y.toFixed(2), mergeX: n.mergeX };
   }
 
-  return { VERSION: 2, create, step, result, score, nextOrder, NO_INPUT, debugLeader };
+  return { VERSION: 4, create, step, result, score, nextOrder, NO_INPUT, debugLeader };
 });

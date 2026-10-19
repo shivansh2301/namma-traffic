@@ -13,7 +13,7 @@ value = Kit.Input.ramp(value, target, ratePerSec, dt);       // analogue feel fo
 
 const drag = Kit.Input.drag(canvas, {
   zone: (clientX, clientY, rect) => clientY > rect.top + rect.height * 0.4, // where steering may start
-  pxPerUnit: 60,                 // relative mode: 60 px from the touch start = full lock
+  pxPerUnit: 60,                 // relative mode: 60 px from the touch start = full lock (or (rect) => px)
   mode: 'relative' | 'absolute',
   absolute: (clientX, rect) => -1..1,  // absolute mode: the game maps finger x to a value
 });

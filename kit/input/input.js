@@ -69,7 +69,7 @@
   /**
    * One-pointer horizontal drag axis.
    *   zone(x, y, rect) -> bool   where a pointerdown may start steering (client coords)
-   *   mode 'relative': value = clamp((x - startX) / pxPerUnit)
+   *   mode 'relative': value = clamp((x - startX) / pxPerUnit)   (pxPerUnit may be a function of rect)
    *   mode 'absolute': value = absolute(clientX, rect) supplied by the game
    */
   function drag(el, opts) {
@@ -79,7 +79,7 @@
     function update() {
       if (!st.active) { st.value = 0; return; }
       if (st.mode === 'absolute' && o.absolute) st.value = clamp1(o.absolute(st.x, rect()));
-      else st.value = clamp1((st.x - st.startX) / o.pxPerUnit);
+      else st.value = clamp1((st.x - st.startX) / (typeof o.pxPerUnit === 'function' ? o.pxPerUnit(rect()) : o.pxPerUnit));
     }
     function onDown(e) {
       if (st.active) return;

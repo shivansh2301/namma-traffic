@@ -4,7 +4,9 @@
  * art (and for agents, who cannot open a browser). Uses @napi-rs/canvas,
  * installed locally:  npm install --prefix .tools/canvas @napi-rs/canvas
  *
- *   node tools/snapshot.js <level> <seed> <seconds> <out.png> [view=first|top] [width] [height]
+ *   node tools/snapshot.js <level> <seed> <seconds> <out.png> [view=chase|first|top] [width] [height]
+ * Append "+touch" to the view (e.g. chase+touch) to draw the phone's left-handle control,
+ * held at the bot's current steer.
  *
  * Plays the level with the bot for <seconds>, then draws one frame with the
  * HUD. Loads the same scripts as client/index.html into a fake window.
@@ -32,7 +34,8 @@ try {
   }
 } catch (_) { /* text will be missing from snapshots */ }
 
-const [levelId = '1', seed = '1', seconds = '20', out = '.work/snap.png', view = 'first', w = '390', h = '780'] = process.argv.slice(2);
+const [levelId = '1', seed = '1', seconds = '20', out = '.work/snap.png', viewArg = 'chase', w = '390', h = '780'] = process.argv.slice(2);
+const [view, extra] = viewArg.split('+');
 const W = +w;
 const H = +h;
 const canvas = napi.createCanvas(W, H);
@@ -55,6 +58,7 @@ for (const f of files) vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8
 
 const { Sim, Bot, Kit, GameRender, GameRenderTop } = ctx;
 const R = (view === 'top' ? GameRenderTop : GameRender).create(canvas);
+if (R.setCamMode) R.setCamMode(view === 'first' ? 'cockpit' : 'chase');
 const interp = Kit.FixedStep.createInterp();
 const st = Sim.create(+levelId, +seed, { skill: 0 });
 const mem = Bot.create();
@@ -67,7 +71,8 @@ for (let t = 0; t < ticks && !Sim.result(st); t++) {
   R.onEvents(ev, st);
   if (t > ticks - 40) R.draw(st, 1, interp, 1 / 30, { hud: true, brake: inp.brake });
 }
-R.draw(st, 1, interp, 1 / 30, { hud: true, brake: inp.brake });
+const touch = extra === 'touch' ? { active: inp.steer !== 0, value: inp.steer, travel: Math.max(44, Math.min(70, Math.floor((W - 216) / 2))) } : null;
+R.draw(st, 1, interp, 1 / 30, { hud: true, brake: inp.brake, touch, touchHint: !!touch && !touch.active });
 fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
 fs.writeFileSync(out, canvas.toBuffer('image/png'));
 const p = st.players[0];

@@ -77,7 +77,6 @@
   #btn-brake { width: 96px; height: 96px; right: 16px; bottom: calc(22px + env(safe-area-inset-bottom)); background: rgba(220,60,50,0.55); }
   #btn-horn { width: 70px; height: 70px; right: 30px; bottom: calc(132px + env(safe-area-inset-bottom)); background: rgba(255,183,3,0.5); color: #1b1b1b; }
   .tbtn.down { transform: scale(0.93); filter: brightness(1.3); }
-  #drag-hint { position: absolute; left: 16px; right: 130px; bottom: calc(40px + env(safe-area-inset-bottom)); font-size: 15px; color: #fff; text-shadow: 0 1px 3px #000; }
   #toast {
     position: absolute; left: 12px; right: 12px; top: 112px; padding: 10px 12px; border-radius: 10px; font: 600 15px var(--font); line-height: 1.35;
     background: rgba(18,22,28,0.92); border-left: 4px solid var(--cyan); opacity: 0; transform: translateY(-6px); transition: opacity 0.2s, transform 0.2s;
@@ -110,7 +109,6 @@
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="fight" hidden role="alert"><strong id="fight-who">Argument!</strong>Hold BRAKE to apologise (−2 karma) · HORN to argue back (costly)</div>
       <div id="touch" hidden>
-        <div id="drag-hint" hidden>Drag left or right on the lower screen to steer</div>
         <button id="btn-horn" class="tbtn" aria-label="Horn">HORN</button>
         <button id="btn-brake" class="tbtn" aria-label="Brake">BRAKE</button>
       </div>

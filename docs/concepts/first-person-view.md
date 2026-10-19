@@ -1,10 +1,24 @@
-# Concept: the first-person view (pseudo-3D on Canvas 2D)
+# Concept: the road view (pseudo-3D on Canvas 2D): chase camera and cockpit
 
 **File:** `client/render.js` (`GameRender`) · alternate top-down map view: `client/render-top.js` (`GameRenderTop`) · shared HUD: `client/hud.js`
 
+## Cameras
+Two camera modes share one projection (`R.setCamMode('chase' | 'cockpit')`;
+Settings → View cycles *behind the scooter* → *from the seat* → *top-down map*):
+- **Chase (default):** the camera sits `CHASE_BACK` 4.6 m behind the scooter
+  and `CHASE_H` 2.6 m up, with the horizon at `CHASE_HORIZON` 0.30 H. The
+  rider is drawn as a depth-sorted item (`me.c` / `me.d` rear sprites: orange
+  commute jacket, purple + delivery box), leaning with steering. You see what
+  is right beside and just behind you (the bottom of the screen is road behind
+  the scooter). A speed pill replaces the cockpit, and chevrons on the bottom
+  edge flag traffic closing from behind.
+- **Cockpit:** camera on the rider at 1.3 m, horizon 0.4 H, handlebar overlay
+  (below).
+
 ## Projection
-Camera on the rider: lateral `camX = player.x`, `camY = player.y`, height 1.3 m
-(lower while falling), looking along the road.
+Cockpit: lateral `camX = player.x`, `camY = player.y`, height 1.3 m
+(lower while falling), looking along the road. Chase: same, with
+`camY = player.y − CHASE_BACK` and the chase height and horizon.
 ```
 screenX = W/2 + (x − camX + bend(d)) × f / d
 screenY = horizon + (camH − z) × f / d          d = y − camY (depth), near plane 0.6 m, far 150 m
@@ -42,6 +56,18 @@ accumulated heading. A small camera roll follows steering and bends.
    mirrors that show blips for traffic within 32 m behind you.
 7. HUD, plus a pulsing "WRONG-SIDE RIDER AHEAD" banner and chevrons over
    warned riders.
+8. **Touch only: the left handle** (`GameHud.drawHandle`, shared with the
+   top-down view): a handlebar grip on a slide track at the bottom left. The
+   player holds it with the left thumb and slides; the drawn grip follows the
+   thumb and rotates, the rider leans. It pulses "HOLD & SLIDE" while idle, and
+   until the first steer shows "Hold the LEFT HANDLE, slide ◀ ▶ to steer" with
+   a ghost thumb (wrapped onto two lines on narrow screens). Track length
+   adapts so it clears the BRAKE button (`client/input.js` `handleTravel`); in
+   the cockpit view it sits above the dashboard.
+
+Busy gully stretches get bunting strung house to house every 12 m and a cloth
+banner (SCHOOL ZONE, SANTHE TODAY...) on the first string (`drawBunting`,
+`BUSY_LOOK`).
 
 ## Fog and fade
 Ground and facade colours are lerped toward the fog colour beyond 35 m
@@ -53,7 +79,7 @@ Baked by `kit/sprites` at `min(220, f/2.2 × dpr)` px/m: `car.{r,f}.v`,
 `bike.{r,f}.v`, `ped.v.frame`, `cow.{s,z,f}.v`, `tree.v`, `shrub.v`.
 
 ## Checking it without a browser
-`node tools/snapshot.js <level> <seed> <seconds> <out.png> [first|top]`
+`node tools/snapshot.js <level> <seed> <seconds> <out.png> [chase|first|top][+touch] [w] [h]`
 (needs `npm install --prefix .tools/canvas @napi-rs/canvas dejavu-fonts-ttf`).
 
 ## Performance notes

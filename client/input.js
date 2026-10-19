@@ -4,9 +4,12 @@
  *
  * Keyboard: ← → / A D steer (ramped 0 -> ±1 over 0.1 s), ↓ / S brake,
  * Space / H horn, P / Esc pause.
- * Touch: drag horizontally in the lower 60% of the screen. 'drag' mode is
- * relative to where the touch started (60 px = full lock); 'follow' mode
- * steers toward the finger's x (SPEC §15 open question 2; switch in settings).
+ * Touch: hold the LEFT HANDLE (bottom-left of the screen, drawn by the
+ * renderer as a handlebar grip on a slide track) and slide it left/right.
+ * 'drag' mode is relative to where the touch started (HANDLE_TRAVEL px =
+ * full lock, less on narrow screens; the drawn grip follows the thumb); 'follow' mode steers
+ * toward the finger's x (switch in settings). BRAKE and HORN are DOM
+ * buttons on the right.
  */
 (function (root) {
   'use strict';
@@ -16,20 +19,33 @@
   const BRAKE = ['ArrowDown', 'KeyS'];
   const HORN = ['Space', 'KeyH'];
 
+  const HANDLE_TRAVEL = 70; // px of thumb travel for full steering lock
+  // Narrow phones get a shorter track so it clears the BRAKE button (96 px + 16 px margin on the right).
+  function handleTravel(w) { return Math.max(44, Math.min(HANDLE_TRAVEL, Math.floor((w - 216) / 2))); }
+
   function create(canvas, btns, steerToward) {
     const keys = Kit.Input.keys(window, ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space']);
     const brakeBtn = Kit.Input.button(btns.brake);
     const hornBtn = Kit.Input.button(btns.horn);
+    // The left handle lives in the bottom-left of the screen; a generous zone so a thumb always finds it.
     const drag = Kit.Input.drag(canvas, {
-      pxPerUnit: 60,
-      zone: (x, y, r) => y > r.top + r.height * 0.4,
+      pxPerUnit: (r) => handleTravel(r.width),
+      zone: (x, y, r) => y > r.top + r.height * 0.55 && x < r.left + r.width * 0.62,
       absolute: (clientX, r) => steerToward(clientX - r.left),
     });
     let kSteer = 0;
     const out = { steer: 0, brake: 0, horn: 0 };
+    const handle = { active: false, value: 0, travel: HANDLE_TRAVEL };
 
     return {
       get touchUsed() { return drag.used; },
+      /** What the renderer needs to draw the left-handle control. */
+      handle() {
+        handle.active = drag.active;
+        handle.value = drag.active ? drag.value : 0;
+        handle.travel = handleTravel(canvas.getBoundingClientRect().width);
+        return handle;
+      },
       setTouchMode(m) { drag.mode = m === 'follow' ? 'absolute' : 'relative'; },
       sample(dt) {
         const dir = (keys.any(RIGHT) ? 1 : 0) - (keys.any(LEFT) ? 1 : 0);

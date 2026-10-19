@@ -3,10 +3,10 @@
  *
  * Screens: title -> mode (commute | delivery) -> levels -> briefing -> play <-> pause -> result.
  * The title, level and briefing screens show the bot riding level 1 behind them.
- * Views: first person (render.js, default) or top-down map (render-top.js).
+ * Views: road view (render.js) behind the scooter (default) or from the seat, or top-down map (render-top.js).
  *
  * Persistence (kit/storage, keys under nc.):
- *   nc.settings  { muted, reduceShake, touchHintSeen, touchSteer, view }
+ *   nc.settings  { muted, reduceShake, touchHintSeen, touchSteer, view, viewV }
  *   nc.progress  { levelId: { stars, bestScore, bestTime } }
  *   nc.rider     { xp, money, runs }  -> rider skill = World.skillLevel(xp)
  *
@@ -21,17 +21,25 @@
 
   // --- persistence ---------------------------------------------------------------
   const store = Kit.Storage.create('nc.');
-  const settings = store.get('settings', { muted: false, reduceShake: false, touchHintSeen: false, touchSteer: 'drag', view: 'first' });
-  if (params.get('view') === 'top') settings.view = 'top';
+  const settings = store.get('settings', { muted: false, reduceShake: false, touchHintSeen: false, touchSteer: 'drag', view: 'chase', viewV: 2 });
+  if (settings.viewV !== 2) { settings.view = 'chase'; settings.viewV = 2; settings.touchHintSeen = false; } // chase camera is the new default; show the left-handle tutorial once
+  if (['chase', 'first', 'top'].includes(params.get('view'))) settings.view = params.get('view');
   const progress = store.get('progress', {});
   const rider = store.get('rider', { xp: 0, money: 0, runs: 0 });
   const saveSettings = () => store.set('settings', settings);
 
   // --- systems ---------------------------------------------------------------------
   const canvas = $('game');
-  const views = { first: GameRender.create(canvas), top: GameRenderTop.create(canvas) };
-  let R = views[settings.view] || views.first;
-  R.resize();
+  // Views: chase (camera behind you, default) and first (from the seat) share the 3D renderer.
+  const views = { road: GameRender.create(canvas), top: GameRenderTop.create(canvas) };
+  let R = views.road;
+  function applyView() {
+    if (settings.view === 'top') R = views.top;
+    else { R = views.road; R.setCamMode(settings.view === 'first' ? 'cockpit' : 'chase'); }
+    R.resize();
+    R.reset();
+  }
+  applyView();
   for (const v of Object.values(views)) v.setReduceShake(settings.reduceShake);
   const synth = Kit.Synth.create({ muted: settings.muted, volume: 0.8 });
   const audio = GameAudio.create(synth);
@@ -135,7 +143,7 @@
     $('brief-best').textContent = (pr ? 'Best: ' + stars(pr.stars) + ' · ' + pr.bestScore + ' pts · ' : '') + 'Your skill: ' + skill();
     const howDrop = L.mode === 'delivery' ? ' To deliver: pull over to the left kerb inside the purple zone and stop.' : '';
     $('brief-controls').textContent = (isTouch
-      ? 'Drag on the lower screen to steer. BRAKE and HORN are bottom right.'
+      ? 'Hold the LEFT HANDLE (bottom left) with your thumb and slide it to steer. BRAKE and HORN are bottom right.'
       : 'Steer ← → · Brake ↓ · Horn Space · Pause P.') + howDrop + ' Stop for people crossing: good karma.';
     setMode('brief');
   }
@@ -143,11 +151,9 @@
   function renderSettings(el) {
     el.innerHTML = '';
     const items = [
-      ['View: ' + (settings.view === 'top' ? 'top-down map' : 'first person'), () => settings.view === 'first', () => {
-        settings.view = settings.view === 'top' ? 'first' : 'top';
-        R = views[settings.view];
-        R.resize();
-        R.reset();
+      ['View: ' + ({ chase: 'behind the scooter', first: 'from the seat', top: 'top-down map' }[settings.view] || 'behind the scooter'), () => settings.view !== 'top', () => {
+        settings.view = { chase: 'first', first: 'top', top: 'chase' }[settings.view] || 'chase';
+        applyView();
       }],
       ['Sound: ' + (settings.muted ? 'off' : 'on'), () => !settings.muted, () => { settings.muted = !settings.muted; synth.setMuted(settings.muted); }],
       ['Reduce shake: ' + (settings.reduceShake ? 'on' : 'off'), () => settings.reduceShake, () => {
@@ -155,7 +161,7 @@
         for (const v of Object.values(views)) v.setReduceShake(settings.reduceShake);
       }],
     ];
-    if (isTouch) items.push(['Touch steering: ' + (settings.touchSteer === 'follow' ? 'follow finger' : 'drag'), () => settings.touchSteer === 'follow', () => { settings.touchSteer = settings.touchSteer === 'follow' ? 'drag' : 'follow'; input.setTouchMode(settings.touchSteer); }]);
+    if (isTouch) items.push(['Touch steering: ' + (settings.touchSteer === 'follow' ? 'follow finger' : 'left handle'), () => settings.touchSteer === 'follow', () => { settings.touchSteer = settings.touchSteer === 'follow' ? 'drag' : 'follow'; input.setTouchMode(settings.touchSteer); }]);
     for (const [label, get, toggle] of items) {
       const b = document.createElement('button');
       b.className = 'toggle';
@@ -195,6 +201,13 @@
     calm: '+' + T.CALM_KARMA + ' karma: calm riding',
     breaker: '+' + T.BREAKER_SLOW_KARMA + ' karma: gentle over the breaker',
   };
+  const BUSY_TEXT = {
+    school: "School's out ahead: kids and parents everywhere. Go slow!",
+    market: 'Santhe day ahead: vegetable carts and crowds.',
+    temple: 'Temple utsava ahead: the crowd spills onto the road.',
+    wedding: 'Wedding procession ahead: band, dancing, the works.',
+    cricket: 'Gully cricket ahead. Mind the ball (and the fielders).',
+  };
   const FIGHT_WHO = { auto: 'the auto driver', car: 'the car driver', bike: 'the biker', bus: 'the bus driver', tanker: 'the tanker driver', ped: 'the pedestrian' };
 
   function eventToasts(ev) {
@@ -205,6 +218,7 @@
       } else if (e.type === 'goodDeed') toast(DEED_TEXT[e.kind] || 'Good karma', 'deed');
       else if (e.type === 'handover') toast(e.kind === 'apartment' ? 'At the gate: security check, then up the lift...' : 'Ringing the bell...', 'deed');
       else if (e.type === 'delivered') toast('Delivered: ' + e.name + ' · ' + '★'.repeat(e.rating) + '☆'.repeat(5 - e.rating) + (e.tip ? ' · tip ₹' + e.tip : '') + (e.late > 0 ? ' · ' + e.late + ' min late' : ''), e.rating >= 4 ? 'good' : 'bad');
+      else if (e.type === 'busyAhead') toast(BUSY_TEXT[e.kind] || 'Busy stretch ahead.', 'deed');
       else if (e.type === 'missed') toast('Missed the drop: ' + e.name + '. Order cancelled, −' + T.MISSED_KARMA + ' karma', 'bad');
       else if (e.type === 'fight') {
         const who = FIGHT_WHO[e.with] || 'them';
@@ -235,7 +249,6 @@
     loop.reset();
     if (loop.paused) loop.resume();
     setMode('play');
-    if (isTouch && !settings.touchHintSeen) $('drag-hint').hidden = false;
   }
 
   function pause() {
@@ -340,7 +353,7 @@
     }
     while (hintIdx < L.hints.length && p.y >= L.hints[hintIdx].at) {
       const h = L.hints[hintIdx++];
-      if (h.key === 'controls' && isTouch) $('hint').textContent = 'Throttle is automatic. Drag to steer; hold BRAKE to slow down.';
+      if (h.key === 'controls' && isTouch) $('hint').textContent = 'Throttle is automatic. Slide the left handle to steer; hold BRAKE to slow down.';
       else $('hint').textContent = h.text;
       $('hint').classList.add('show');
       hintTimer = 5;
@@ -369,7 +382,6 @@
       if (!settings.touchHintSeen && input.touchUsed) {
         settings.touchHintSeen = true;
         saveSettings();
-        $('drag-hint').hidden = true;
       }
       interp.begin(); interp.add(state.players); interp.add(state.npcs); interp.add(state.peds);
       const t0 = performance.now();
@@ -401,7 +413,8 @@
     autoQuality(dt);
     const inRun = state && (mode === 'play' || mode === 'pause' || mode === 'result');
     const st = inRun ? state : demo && demo.st;
-    if (st) R.draw(st, alpha, interp, dt, { hud: inRun, brake: lastInput.brake });
+    const touch = isTouch && mode === 'play' ? input.handle() : null; // the left-handle control
+    if (st) R.draw(st, alpha, interp, dt, { hud: inRun, brake: lastInput.brake, touch, touchHint: !settings.touchHintSeen });
     audio.update(inRun ? state : null, mode === 'play');
     if (debugEl) debugEl.textContent = fps.toFixed(0) + ' fps · sim ' + simMs.toFixed(2) + ' ms · ' + (st ? st.npcs.length + ' npcs ' + st.peds.length + ' peds' : '');
   }
@@ -449,7 +462,7 @@
 
   function renderControlsHelp() {
     $('title-controls').textContent = isTouch
-      ? 'Touch: drag left/right on the lower screen to steer · BRAKE and HORN buttons bottom right · ❚❚ to pause'
+      ? 'Touch: hold the left handle (bottom left) and slide to steer · BRAKE and HORN bottom right · ❚❚ to pause'
       : 'Keyboard: ← → steer · ↓ brake · Space horn · P pause';
   }
 

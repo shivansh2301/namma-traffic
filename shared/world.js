@@ -70,7 +70,8 @@
     DROP_MAX_X: 2.3, // stop at the kerb: x <= this (left half of lane 0, or the footpath/shoulder)
     DROP_STOP_SPEED: 0.8,
     DROP_STOP_HOLD: 0.4, // s stopped inside the zone before the handover starts
-    HANDOVER: { apartment: 4, house: 2.5 }, // s: security gate + lift vs knock on the door
+    HANDOVER: { apartment: 4, house: 2.5 }, // s: the plain scene (approved + lift / doorbell + collect); see HANDOVER_SCENES
+    SCENE_MOOD: 0.8, // karma above 50 favours friendly handover scenes, below 50 the slow ones
     LATE_STAR_PER_MIN: 1, // -1 star per game minute late
     GOODS_POTHOLE: 6, // bag damage (eggs, milk...)
     GOODS_BREAKER: 4,
@@ -84,8 +85,9 @@
     // Crashes (§7.5)
     CRASH_TIME: 1.5,
     INVULN_TIME: 2.0,
-    CRASH_COST: { vehicle: 20, headOn: 30, cow: 20, barricade: 15, ped: 10 },
-    CRASH_KARMA: { vehicle: 0, headOn: 0, cow: 15, barricade: 0, ped: 20 },
+    CRASH_COST: { vehicle: 20, headOn: 30, cow: 20, barricade: 15, ped: 10, slip: 8, drain: 15, dog: 8, stall: 10 },
+    CRASH_KARMA: { vehicle: 0, headOn: 0, cow: 15, barricade: 0, ped: 20, slip: 0, drain: 0, dog: 10, stall: 5 },
+    PED_SAFE_SPEED: 1.5, // m/s: (nearly) stopped, a pedestrian walking into you is a nudge, not a crash
     HITBOX_FORGIVE: 0.9, // collision boxes are scaled by this; feels fairer
     SCRAPE_SPEED: 1.5, // m/s relative; slower contact with a vehicle stops you instead of crashing (docs/DECISIONS.md)
 
@@ -98,7 +100,15 @@
     APOLOGY_HOLD: 0.4,
     APOLOGY_KARMA: 2,
     ARGUE_MORE_KARMA: 4,
-    FIGHT_KARMA: { auto: 15, car: 10, bike: 10, bus: 8, tanker: 8, ped: 15 },
+    FIGHT_KARMA: { auto: 15, car: 10, bike: 10, bus: 8, tanker: 8, ped: 15, vendor: 10 },
+
+    // Gaali: honk at the same person GAALI_HONKS times within HORN_WINDOW, or more
+    // than GAALI_SPAM times in the window at all, and someone lets you have it.
+    GAALI_HONKS: 3,
+    GAALI_SPAM: 5,
+    GAALI_RANGE: 12,
+    GAALI_KARMA: 3,
+    GAALI_COOLDOWN: 2.5,
 
     // Good deeds
     GIVE_WAY_SPEED: 2.5,
@@ -190,11 +200,62 @@
     PUDDLES_PER_100M: 3,
     PEDS_PER_100M: 9, // per side
     COWS_PER_100M: 1.5,
-    FOOTPATH_PED_MULT: 1.5,
+    FOOTPATH_PED_MULT: 2,
     WRONG_SIDE_PER_S: 0.22,
     PED_CROSS_PER_S: 0.025, // per walking pedestrian near the player
     PED_CROSS_SPEED: 1.2,
     PED_CROSS_PAUSE_DIST: 6,
+
+    // Street life on the edges (docs/concepts/street-life.md): own RNG stream
+    STALLS_PER_100M: 0.9, // chai / momo / biryani stalls, per edge (footpath or shoulder)
+    STALL_W: 1.1, // across the edge (narrower on a gully shoulder)
+    STALL_L: 1.8,
+    DOGS_PER_100M: 1.1, // street dogs asleep on the edges, per edge (more in gullies)
+    DOG_W: 0.45,
+    DOG_L: 0.9,
+    DOG_WAKE_DIST: 4, // pass a sleeping dog this close...
+    DOG_WAKE_SPEED: 3, // ...faster than this...
+    DOG_WAKE_CHANCE: 0.4, // ...and it may chase you (more on the footpath or with bad karma)
+    DOG_CHASE_SPEED: 7.4, // m/s: full speed (8.3) outruns it
+    DOG_CHASE_TIME: 5,
+    DOG_BITE_DIST: 0.9,
+    DOG_BITE_COST: 40, // rupees: the injection
+    DOG_SCARE_RANGE: 8, // a honk scares a chasing dog off
+    DRAINS_PER_100M: 1.2, // missing drain slabs on footpaths
+    DRAIN_W: 0.6,
+    DRAIN_L: 1.0,
+    DRAIN_SAFE_SPEED: 1.5, // slower than this you just stop at the edge of the hole
+    MANHOLES_PER_100M: 1.0, // sunken manhole covers in the road: a bump, slippery in the rain
+    MANHOLE_R: 0.4,
+    FOOTPATH_PUDDLES_PER_100M: 1.2,
+    SLIP_MIN_SPEED: 4.5, // hitting a puddle faster than this may make you slip and fall
+    SLIP_CHANCE: 0.05, // per puddle; x2 in the rain, x2 when steering hard; skill and water help
+    MANHOLE_SLIP_CHANCE: 0.12, // wet manhole cover while steering hard
+
+    // NPC personalities
+    RACER_CHANCE: 0.14, // of bikes: 50-60 km/h, weaving, tailgating
+    RACER_V_MIN: 14,
+    RACER_V_MAX: 17,
+    SLOW_CAR_CHANCE: 0.12, // of cars: a learner (L board) at walking pace
+    SLOW_CAR_V_MIN: 2.5,
+    SLOW_CAR_V_MAX: 4,
+    HONKER_CHANCE: 0.18, // of cars and autos (and every tanker): leans on the horn
+    HONKER_EVERY_MIN: 1.2,
+    HONKER_EVERY_MAX: 2.6,
+    TANKER_SWAY: 0.45, // m: water tankers wander across their lane, and do not stop wandering for you
+    TANKER_SWAY_PERIOD: 5,
+
+    // Busy gully stretches (school's out, market day...): random per seed, gully segments only
+    BUSY_CHANCE: 0.7, // per gully segment
+    BUSY_LEN_MIN: 35,
+    BUSY_LEN_MAX: 60,
+    BUSY_MIN_Y: 60, // never at the start
+    BUSY_TRAFFIC: 2.2, // traffic density multiplier inside (same-direction)
+    BUSY_ONCOMING: 1.8,
+    BUSY_PEDS_PER_100M: 30, // extra pedestrians, both sides together
+    BUSY_CROSS_MULT: 3, // they cross far more often
+    BUSY_CART_CHANCE: 0.15, // a spawn inside becomes a handcart (market: double)
+    BUSY_WARN: 70, // announce this many metres ahead
 
     // Traffic behaviour (§6.2)
     FOLLOW_GAP: 2,
@@ -203,6 +264,7 @@
     NPC_ACCEL: 2,
     NPC_STOP_DEAD_DECEL: 9,
     BLOCKED_BEFORE_LANE_CHANGE: 1.0,
+    GRIDLOCK_TIME: 10, // s nose to nose with opposite traffic before one of them turns off into a side gate
     AUTO_STOP_CHANCE_PER_10S: 0.02,
     CAB_STOP_CHANCE_PER_10S: 0.03,
     BUS_STOP_ANYWHERE_PER_10S: 0.02,
@@ -234,6 +296,33 @@
     VIEW_AHEAD: 28,
     TELEGRAPH_TIME: 2,
   };
+
+  /**
+   * Handover scenes at the drop (docs/concepts/delivery-missions.md). Each scene is
+   * a list of [step, seconds]; mood +1 is more likely with good karma, -1 with bad.
+   * tipMult / tipBonus change the tip; gift 'water' gives steady hands.
+   */
+  const HANDOVER_SCENES = {
+    apartment: [
+      { id: 'approved', w: 4, mood: 0, steps: [['guard', 1.5], ['lift', 2.5]] },
+      { id: 'approvalSlow', w: 3, mood: -1, steps: [['guard', 1.5], ['approvalWait', 2.5], ['lift', 2.5]] },
+      { id: 'leaveAtGate', w: 2, mood: 0, steps: [['guard', 1.5], ['gate', 1.0]], tipMult: 0 },
+      { id: 'comesDown', w: 2, mood: 1, steps: [['guard', 1.5], ['comesDown', 2.0]], tipBonus: 20 },
+      { id: 'wrongTower', w: 1, mood: -1, steps: [['guard', 1.5], ['wrongTower', 2.0], ['lift', 2.5]] },
+    ],
+    house: [
+      { id: 'doorbell', w: 4, mood: 0, steps: [['bell', 1.0], ['collect', 1.5]] },
+      { id: 'kid', w: 2, mood: 1, steps: [['bell', 0.8], ['kid', 0.8]] },
+      { id: 'aunty', w: 2, mood: -1, steps: [['bell', 1.0], ['checking', 2.5]] },
+      { id: 'change', w: 2, mood: -1, steps: [['bell', 1.0], ['change', 2.5]] },
+      { id: 'dog', w: 1, mood: -1, steps: [['bell', 1.0], ['dogGate', 1.5], ['collect', 1.0]] },
+      { id: 'water', w: 1, mood: 1, steps: [['bell', 1.0], ['collect', 1.0], ['water', 1.0]], gift: 'water' },
+    ],
+  };
+  const STALL_KINDS = ['chai', 'momo', 'biryani'];
+
+  /** What makes a gully busy (flavour: toast text, banner and bunting colours live in the client). */
+  const BUSY_KINDS = ['school', 'market', 'temple', 'wedding', 'cricket'];
 
   // §6.1. `variants` is how many colour variants the renderer provides.
   const VEHICLES = {
@@ -278,7 +367,7 @@
   };
 
   // Gully mix: lots of bikes and autos, carts, fewer cars (but they are parked everywhere).
-  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0 };
+  const GULLY_MIX = { bike: 5, auto: 3, car: 3, cart: 1.2, bus: 0, tanker: 0.3 };
 
   const LEVELS = [
     // ---- Office commute: be at the tech park by 10:00 -------------------------
@@ -503,8 +592,8 @@
       mix: { bike: 5, auto: 3, car: 7, bus: 1.1, tanker: 1.4 },
       drops: [
         { at: 132, kind: 'house', name: 'Ashirwad, 14th Cross', due: '20:03' },
-        { at: 372, kind: 'apartment', name: 'Silver Oak Towers, A-902', due: '20:05' },
-        { at: 648, kind: 'house', name: 'Sri Krishna Krupa, 2nd Main', due: '20:08' },
+        { at: 372, kind: 'apartment', name: 'Silver Oak Towers, A-902', due: '20:06' },
+        { at: 648, kind: 'house', name: 'Sri Krishna Krupa, 2nd Main', due: '20:09' },
         { at: 840, kind: 'apartment', name: 'Palm Grove, Tower 4-1102', due: '20:10' },
       ],
       landmarks: [
@@ -753,7 +842,7 @@
   }
 
   return {
-    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, Rng,
+    DT, T, VEHICLES, PED, LEVELS, SEG_DEFAULTS, BUSY_KINDS, HANDOVER_SCENES, STALL_KINDS, Rng,
     level, segmentAt, surfaceAt, curveAt, levelsOf, prevInMode, pedBand, crossSection, laneCenter, oncCenter,
     jamCap, barricadeAt, laneBlocked, parseClock, fmtClock, xpForLevel, skillLevel,
     levelIds: LEVELS.map((l) => l.id),

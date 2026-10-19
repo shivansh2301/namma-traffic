@@ -3,7 +3,7 @@
  * Bump VERSION when shipping. ASSETS must list every file index.html loads
  * (tests/purity.test.js checks this).
  */
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = 'namma-commute-' + VERSION;
 const ASSETS = [
   './',

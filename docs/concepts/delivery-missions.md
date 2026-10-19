@@ -44,6 +44,25 @@ Segments have an `area` that sets the scenery and feel:
   at a tech-park gate arch with the destination's name.
 - `main`: shops with awnings and signboards (the v1 look).
 
+## Busy gullies
+Some gully stretches are crowded: school's out, santhe (market) day, a temple
+utsava, a wedding procession, gully cricket (`World.BUSY_KINDS`). At create
+time each `gully` segment gets one with probability `BUSY_CHANCE` (0.7),
+`BUSY_LEN_MIN`–`BUSY_LEN_MAX` (35–60 m) long, never before
+`BUSY_MIN_Y`. They come from their own RNG stream
+(`Rng.hash(seed, levelId, 'busy')`), so the rest of the layout is unchanged, and
+live in `st.busy = [{ y0, y1, kind, seen }]`. Inside one:
+- same-direction traffic spawns at `BUSY_TRAFFIC` × density, oncoming at `BUSY_ONCOMING` ×;
+- `BUSY_CART_CHANCE` of spawns become handcarts (doubled on market day);
+- `BUSY_PEDS_PER_100M` extra pedestrians stand and walk along the edges, and
+  pedestrians cross `BUSY_CROSS_MULT` × as often (more give-way karma, more
+  chances to clash).
+
+A `busyAhead` event fires once, `BUSY_WARN` m before the stretch (a toast
+in the client); the HUD progress bar marks busy stretches in orange; the road
+view hangs bunting and a banner. They may overlap a drop zone, which makes that
+drop harder. Tests: `tests/busy.test.js`.
+
 ## Junctions
 `junction: true` on a segment marks a turn into a road of a different width:
 same-direction traffic in lanes that do not continue, and oncoming traffic
@@ -63,6 +82,7 @@ in fights. It must deliver every order on 20 seeds per shift.
 crash-free bot delivery time + 1.5 game minutes (and commute start times).
 
 ## Ideas
-New orders arriving mid-shift (a phone ping, re-routing), cash-on-delivery
+Busy-stretch extras: a wedding band walking in the lane, a cricket ball
+bouncing across, school vans double-parked. New orders arriving mid-shift (a phone ping, re-routing), cash-on-delivery
 change, customers who come down vs "leave at the door", rain making the bag
 soggy, a dark-store pickup at the start.

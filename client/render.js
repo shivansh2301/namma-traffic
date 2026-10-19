@@ -1,14 +1,15 @@
 /*
- * client/render.js: first-person view from the rider's seat of a Yolo.
+ * client/render.js: the road view: a chase camera just behind the Yolo
+ * (default, setCamMode('chase')) or the rider's seat (setCamMode('cockpit')).
  *
  *   const R = GameRender.create(canvas);
  *   R.draw(state, alpha, interp, frameDt, { hud })   // every frame
  *   R.onEvents(events, state)                        // shake, splashes, bubbles
- *   R.reset(); R.resize(); R.setReduceShake(bool)
+ *   R.reset(); R.resize(); R.setReduceShake(bool); R.setCamMode('chase' | 'cockpit')
  *
  * Pseudo-3D on Canvas 2D (docs/concepts/first-person-view.md):
  * - Sim coordinates are road-aligned (x across, y along). The camera sits on
- *   the rider (x, y, 1.3 m up) looking along the road. A point at lateral x,
+ *   the rider (x, y, 1.3 m up), or CHASE_BACK behind and CHASE_H up, looking along the road. A point at lateral x,
  *   depth d projects to screenX = cx + (x - camX + bend(d)) * f / d,
  *   screenY = horizon + (camH - z) * f / d.
  * - bend(d) integrates the level's curvature ahead, so bends and junction
@@ -27,9 +28,21 @@
   const shade = SP.shade;
   const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
-  const CAM_H = 1.3;
+  const CAM_H = 1.3; // cockpit view: eye height on the seat
+  const CHASE_BACK = 4.6; // chase view: camera this far behind the scooter...
+  const CHASE_H = 2.6; // ...and this high
+  const CHASE_HORIZON = 0.30; // horizon height as a fraction of the screen in the chase view
   const NEAR = 0.6;
   const FAR = 150;
+  const BUNT_EVERY = 12; // metres between bunting strings in a busy gully
+  /** Busy gully looks (World.BUSY_KINDS): flag colours, banner cloth and text. */
+  const BUSY_LOOK = {
+    school: { flags: ['#1e88e5', '#fdd835'], cloth: '#1565c0', text: 'SCHOOL ZONE' },
+    market: { flags: ['#43a047', '#ff7043', '#fdd835'], cloth: '#2e7d32', text: 'SANTHE TODAY' },
+    temple: { flags: ['#ff9800', '#ffeb3b'], cloth: '#e65100', text: 'TEMPLE UTSAVA' },
+    wedding: { flags: ['#e91e63', '#ffc107', '#8bc34a'], cloth: '#ad1457', text: 'SHUBHA VIVAHA' },
+    cricket: { flags: ['#29b6f6', '#ef5350', '#ffffff'], cloth: '#283593', text: 'GULLY CRICKET' },
+  };
   const HGT = { bike: 1.55, auto: 1.75, car: 1.45, bus: 3.1, tanker: 2.9, cart: 1.4 };
   const PURPLE = '#7b2cbf';
 
@@ -272,7 +285,33 @@
     if (!front) vendor();
   }
 
+  /** You, seen from behind: Yolo e-scooter, rider, and a delivery box in delivery mode. */
+  function meRear(g, jacket, delivery) {
+    shadowUnder(g, 0.9, 1.65);
+    const bot = 0.825;
+    g.fillStyle = '#111'; box(g, -0.07, bot - 0.42, 0.14, 0.42, 0.05);
+    g.fillStyle = PAL.yoloDark; box(g, -0.2, 0.0, 0.4, 0.5, 0.1);
+    g.fillStyle = PAL.yolo; box(g, -0.17, 0.02, 0.34, 0.3, 0.08);
+    g.fillStyle = '#e53935'; box(g, -0.09, 0.36, 0.18, 0.06, 0.02);
+    g.fillStyle = '#2d2a26'; box(g, -0.2, -0.05, 0.13, 0.42, 0.05); box(g, 0.07, -0.05, 0.13, 0.42, 0.05);
+    g.fillStyle = jacket; poly(g, [-0.27, 0.05, 0.27, 0.05, 0.23, -0.5, -0.23, -0.5]);
+    g.strokeStyle = jacket; g.lineWidth = 0.1; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(-0.22, -0.42); g.lineTo(-0.42, -0.24); g.moveTo(0.22, -0.42); g.lineTo(0.42, -0.24); g.stroke();
+    g.strokeStyle = '#1f1f1f'; g.lineWidth = 0.05; g.beginPath(); g.moveTo(-0.46, -0.22); g.lineTo(0.46, -0.22); g.stroke();
+    g.fillStyle = '#9c6a45'; circ(g, -0.44, -0.23, 0.05); circ(g, 0.44, -0.23, 0.05);
+    g.fillStyle = '#cfd8dc'; circ(g, -0.46, -0.42, 0.05); circ(g, 0.46, -0.42, 0.05);
+    if (delivery) {
+      g.fillStyle = '#3c096c'; box(g, -0.24, -0.3, 0.48, 0.38, 0.05);
+      g.fillStyle = '#7b2cbf'; box(g, -0.21, -0.27, 0.42, 0.32, 0.04);
+      g.fillStyle = '#e0aaff'; box(g, -0.12, -0.15, 0.24, 0.06, 0.02);
+    }
+    g.fillStyle = '#ffffff'; circ(g, 0, -0.64, 0.155);
+    g.fillStyle = PAL.yolo; box(g, -0.03, -0.79, 0.06, 0.3, 0.02);
+  }
+
   function registerSprites(sp) {
+    sp.register('me.c', 0.95, 1.65, (g) => meRear(g, '#e8590c', false));
+    sp.register('me.d', 0.95, 1.65, (g) => meRear(g, '#5a189a', true));
     for (let v = 0; v < 2; v++) {
       sp.register('cart.r.' + v, 1.1, 1.4, (g) => cartFace(g, v, false));
       sp.register('cart.f.' + v, 1.1, 1.4, (g) => cartFace(g, v, true));
@@ -334,6 +373,7 @@
     let heading = 0;
     let trauma = 0;
     let reduceShake = false;
+    let camMode = 'chase';
     let shakeY = 0;
     let hornFlash = 0;
     let skyline = null;
@@ -789,7 +829,7 @@
       it.d = d; it.kind = kind; it.ref = ref; it.a = a; it.b = b;
     }
     const byDepth = (p, q) => q.d - p.d;
-    const K_VEH = 1, K_PED = 2, K_COW = 3, K_TREE = 4, K_POLE = 5, K_BAR = 6, K_SHRUB = 7, K_SHELTER = 8, K_PIN = 9, K_GATE = 10;
+    const K_VEH = 1, K_PED = 2, K_COW = 3, K_TREE = 4, K_POLE = 5, K_BAR = 6, K_SHRUB = 7, K_SHELTER = 8, K_PIN = 9, K_GATE = 10, K_ME = 11, K_BUNT = 12;
 
     function collect(st, L, alpha, interp) {
       nItems = 0;
@@ -804,6 +844,10 @@
         const d = pd.y - camY;
         if (d < 0.3 || d > FAR || pd.mode === 'gone') continue;
         addItem(interp.y(pd, alpha) - camY, K_PED, pd, interp.x(pd, alpha), interp.y(pd, alpha));
+      }
+      if (camMode === 'chase') {
+        const me = st.players[0];
+        addItem(interp.y(me, alpha) - camY, K_ME, me, interp.x(me, alpha), interp.y(me, alpha));
       }
       // trees on compound cells, street trees, poles with cables
       const CELL = 6;
@@ -835,6 +879,11 @@
         if (o.status === 'pending' && o.y - camY > 1 && o.y - camY < FAR) addItem(o.y - camY, K_PIN, o, o === next ? 1 : 0, 0);
       }
       if (L.destination && L.length - camY > -2 && L.length - camY < FAR) addItem(L.length - camY, K_GATE, L, 0, 0);
+      for (const b of st.busy || []) {
+        for (let y = b.y0, i = 0; y <= b.y1; y += BUNT_EVERY, i++) {
+          if (y - camY > 1 && y - camY < FAR) addItem(y - camY, K_BUNT, b, y, i);
+        }
+      }
       for (const fbs of L.busStops) {
         if (fbs.y - camY > -3 && fbs.y - camY < FAR) addItem(fbs.y - camY, K_SHELTER, fbs, 0, 0);
       }
@@ -1072,6 +1121,64 @@
       ctx.globalAlpha = 1;
     }
 
+    /** Bunting strung house to house across a busy gully; the first string carries a cloth banner. */
+    function drawBunting(L, b, y, banner) {
+      const d = y - camY;
+      if (d < NEAR + 0.5) return;
+      const s = World.segmentAt(L, y);
+      const look = BUSY_LOOK[b.kind] || BUSY_LOOK.market;
+      const x0 = s.xs.wallL + 0.2;
+      const x1 = s.xs.wallR - 0.2;
+      const bd = bendAt(d);
+      const k = f / d;
+      const N = 12;
+      const pts = [];
+      ctx.globalAlpha = fade(d);
+      ctx.strokeStyle = '#4e342e';
+      ctx.lineWidth = Math.max(1, 0.03 * k);
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const u = i / N;
+        const X = PX(x0 + (x1 - x0) * u, d, bd);
+        const Y = PY(4.5 - 2.8 * u * (1 - u), d); // sags 0.7 m in the middle
+        pts.push(X, Y);
+        if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+      }
+      ctx.stroke();
+      for (let i = 0; i < N; i++) {
+        const xa = pts[2 * i], ya = pts[2 * i + 1], xb = pts[2 * i + 2], yb = pts[2 * i + 3];
+        ctx.fillStyle = look.flags[i % look.flags.length];
+        ctx.beginPath();
+        ctx.moveTo(xa + (xb - xa) * 0.12, ya + (yb - ya) * 0.12);
+        ctx.lineTo(xb - (xb - xa) * 0.12, yb - (yb - ya) * 0.12);
+        ctx.lineTo((xa + xb) / 2, (ya + yb) / 2 + 0.38 * k);
+        ctx.closePath();
+        ctx.fill();
+      }
+      if (banner) {
+        const xm = (s.xs.wallL + s.xs.wallR) / 2;
+        const hw = Math.min(2.2, (x1 - x0) * 0.3);
+        const left = PX(xm - hw, d, bd);
+        const right = PX(xm + hw, d, bd);
+        const top = PY(3.75, d);
+        ctx.fillStyle = look.cloth;
+        ctx.fillRect(left, top, right - left, 0.7 * k);
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillRect(left, top + 0.06 * k, right - left, Math.max(1, 0.04 * k));
+        ctx.fillRect(left, top + 0.6 * k, right - left, Math.max(1, 0.04 * k));
+        ctx.font = '800 20px ' + FONT;
+        const px = Math.min(0.42 * k, (20 * (right - left) * 0.9) / ctx.measureText(look.text).width);
+        if (px >= 14) {
+          ctx.font = '800 ' + px.toFixed(0) + 'px ' + FONT;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(look.text, (left + right) / 2, top + 0.35 * k);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
     function drawShelter(L, bs) {
       const s = World.segmentAt(L, bs.y);
       const x0 = s.xs.wallL + 0.3;
@@ -1171,7 +1278,10 @@
         if (b.t <= 0 || (!ref && b.kind !== 'player')) { bubbles.splice(i, 1); continue; }
         let X;
         let Y;
-        if (b.kind === 'player') { X = W / 2; Y = H * 0.62; }
+        if (b.kind === 'player') {
+          if (camMode === 'chase') { const d = CHASE_BACK; X = PX(camX, d, bendAt(d)); Y = Math.max(HUD_TOP + 34, PY(2.4, d) - 14); }
+          else { X = W / 2; Y = H * 0.62; }
+        }
         else {
           const y = interp.y(ref, alpha);
           const d = Math.max(NEAR + 0.4, (ref.l ? y - ref.l / 2 : y) - camY);
@@ -1360,6 +1470,60 @@
       }
     }
 
+    // --- chase view: you, the speed pill, rear warnings ----------------------------------------
+    function drawMe(p, x, y, L) {
+      const d = y - camY;
+      if (d < NEAR) return;
+      const k = f / d;
+      const sx = PX(x, d, bendAt(d));
+      const gy = PY(0, d);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(sx, gy, 0.55 * k, 0.13 * k, 0, 0, Math.PI * 2); ctx.fill();
+      let lean = p.steer * 0.22 + (p.wobble > 0 && !reduceShake ? Math.sin(time * 38) * 0.08 : 0);
+      if (p.crash > 0) lean = (1 - p.crash / T.CRASH_TIME) * 1.35 * (p.crashWith === 'headOn' ? -1 : 1);
+      if (p.invuln > 0 && Math.floor(time * 10) % 2 === 0) ctx.globalAlpha = 0.4;
+      ctx.save();
+      ctx.translate(sx, gy);
+      ctx.rotate(lean);
+      sprites.draw(ctx, L.mode === 'delivery' ? 'me.d' : 'me.c', 0, -1.65 * k / 2, 0, k);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      if (hornFlash > 0) {
+        ctx.font = '800 15px ' + FONT;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,209,102,' + hornFlash.toFixed(3) + ')';
+        ctx.fillText('BEEP!', sx + 0.7 * k, PY(1.9, d));
+      }
+    }
+
+    /** Speed and distance to the next drop / the office, in place of the cockpit display. */
+    function drawDash(st, touch) {
+      const p = st.players[0];
+      const L = World.level(st.levelId);
+      let text = Math.round(p.v * 3.6) + ' km/h';
+      if (L.mode === 'delivery') {
+        const o = Sim.nextOrder(st);
+        if (o) text += '  ·  drop in ' + Math.max(0, Math.round(o.y - p.y)) + ' m';
+      } else text += '  ·  office ' + (Math.max(0, L.length - p.y) / 1000).toFixed(2) + ' km';
+      ctx.font = '800 15px ' + FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const w = ctx.measureText(text).width + 24;
+      const y = touch ? H - 168 : H - 30;
+      ctx.fillStyle = L.mode === 'delivery' ? 'rgba(36,9,63,0.85)' : 'rgba(12,34,51,0.85)';
+      SP.roundRect(ctx, W / 2 - w / 2, y - 15, w, 30, 15); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, W / 2, y + 1);
+      // traffic coming up behind the camera: chevrons on the bottom edge
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      for (const n of st.npcs) {
+        const d = n.y - camY;
+        if (n.dir < 0 || n.kind === 'cow' || n.parked || d > 0 || d < -25 || n.v < p.v + 0.5) continue;
+        chevron(Math.max(14, Math.min(W - 14, cx0 + (n.x - camX) * 45)), H - 10, false, 8);
+      }
+    }
+
+
     // --- main draw ---------------------------------------------------------------------------
     function draw(st, alpha, interp, dt, opts) {
       time += dt;
@@ -1367,15 +1531,23 @@
       const L = World.level(st.levelId);
       const p = st.players[0];
       const wet = st.weather === 'rain';
+      const chase = camMode === 'chase';
       fogCol = wet ? PAL.fogRain : PAL.fog;
       camX = interp.x(p, alpha);
-      camY = interp.y(p, alpha);
+      camY = interp.y(p, alpha) - (chase ? CHASE_BACK : 0);
+      hY = H * (chase ? CHASE_HORIZON : 0.4);
       heading += World.curveAt(L, camY) * p.v * dt;
       trauma = Math.max(0, trauma - dt * 1.8);
       shakeY = reduceShake ? 0 : trauma * trauma * 14 * Math.sin(time * 55);
-      camH = CAM_H + (p.crash > 0 ? -0.6 * (1 - p.crash / T.CRASH_TIME) : 0) + Math.sin(time * 9) * 0.008 * p.v;
-      const roll = (p.crash > 0 ? 0.35 * (1 - p.crash / T.CRASH_TIME) : -p.steer * 0.045 * Math.min(1, p.v / 4)) +
-        Math.max(-0.08, Math.min(0.08, World.curveAt(L, camY) * p.v * p.v * 0.03)) + (p.wobble > 0 && !reduceShake ? Math.sin(time * 37) * 0.02 : 0);
+      let roll;
+      if (chase) {
+        camH = CHASE_H + Math.sin(time * 9) * 0.004 * p.v;
+        roll = Math.max(-0.04, Math.min(0.04, World.curveAt(L, camY) * p.v * p.v * 0.015));
+      } else {
+        camH = CAM_H + (p.crash > 0 ? -0.6 * (1 - p.crash / T.CRASH_TIME) : 0) + Math.sin(time * 9) * 0.008 * p.v;
+        roll = (p.crash > 0 ? 0.35 * (1 - p.crash / T.CRASH_TIME) : -p.steer * 0.045 * Math.min(1, p.v / 4)) +
+          Math.max(-0.08, Math.min(0.08, World.curveAt(L, camY) * p.v * p.v * 0.03)) + (p.wobble > 0 && !reduceShake ? Math.sin(time * 37) * 0.02 : 0);
+      }
       buildBends(L);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.save();
@@ -1398,6 +1570,8 @@
           case K_SHELTER: drawShelter(L, it.ref); break;
           case K_PIN: drawPin(it.ref, it.a); break;
           case K_GATE: drawTechGate(L); break;
+          case K_ME: drawMe(it.ref, it.a, it.b, L); break;
+          case K_BUNT: drawBunting(L, it.ref, it.a, it.b === 0); break;
           default: break;
         }
       }
@@ -1406,7 +1580,9 @@
       if (wet) drawRain(dt);
       drawBubbles(st, dt, alpha, interp);
       drawSplat(dt);
-      drawCockpit(st, opts && opts.brake);
+      if (chase) drawDash(st, opts && opts.touch);
+      else drawCockpit(st, opts && opts.brake);
+      if (opts && opts.touch && opts.hud) GameHud.drawHandle(ctx, W, H, opts.touch, opts.touchHint, time, chase ? 0 : 150);
       if (opts && opts.hud) {
         drawTelegraphs(st);
         GameHud.draw(ctx, st, W, { speed: false });
@@ -1418,7 +1594,7 @@
         const e = ev[i];
         switch (e.type) {
           case 'splash':
-            if (e.player) addSplat(Math.round(4 + (e.size || 0.5) * 6));
+            if (e.player && camMode === 'cockpit') addSplat(Math.round(4 + (e.size || 0.5) * 6));
             else burst(e.x, e.y, 6 + Math.round((e.size || 0.5) * 12), 0, 3, 0.6, 0.12, 2.5);
             break;
           case 'pedSplashed': bubble('ped', e.pedId, e.byPlayer ? 'Ayyo! My clothes!' : 'Ayyo!'); break;
@@ -1473,8 +1649,11 @@
       /** Cap the device pixel ratio (auto quality on slow phones). */
       setMaxDpr(v) { if (v !== maxDpr) { maxDpr = v; resize(); } },
       setReduceShake(v) { reduceShake = !!v; },
-      /** World x under a canvas-relative CSS x at the scooter's front (for follow-the-finger steering). */
-      worldX(cssX) { const d = 4; return camX + ((cssX - cx0) * d) / f - bendAt(d); },
+      /** 'chase' (camera behind the scooter, default) or 'cockpit' (from the seat, handlebar in view). */
+      setCamMode(m) { camMode = m === 'cockpit' ? 'cockpit' : 'chase'; },
+      get camMode() { return camMode; },
+      /** World x under a canvas-relative CSS x just ahead of the scooter (for follow-the-finger steering). */
+      worldX(cssX) { const d = (camMode === 'chase' ? CHASE_BACK : 0) + 4; return camX + ((cssX - cx0) * d) / f - bendAt(d); },
     };
   }
 
